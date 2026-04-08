@@ -1,0 +1,5 @@
+[functions.upload-avatar]
+verify_jwt = false
+
+[functions.get-activity-feed]
+verify_jwt = false
