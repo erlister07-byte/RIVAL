@@ -12,14 +12,14 @@ type Props = {
 export function MainLayout({ children, scrollable = true }: Props) {
   if (!scrollable) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
+      <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
         <View style={styles.container}>{children}</View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {children}
       </ScrollView>
@@ -42,6 +42,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background
   },
   scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.xs,
     paddingBottom: TAB_BAR_CLEARANCE,

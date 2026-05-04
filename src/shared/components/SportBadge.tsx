@@ -21,7 +21,7 @@ const SIZE_MAP = {
   },
   medium: {
     container: 40,
-    icon: 24,
+    icon: 26,
     radius: 12
   },
   large: {
@@ -40,7 +40,7 @@ export function SportBadge({
 }: Props) {
   const metrics = SIZE_MAP[size];
   const isActiveSelection = isSelected ?? selected;
-  const iconColor = isEnabled ? colors.white : "rgba(255,255,255,0.62)";
+  const iconColor = isEnabled ? colors.white : colors.gray100;
 
   return (
     <View
@@ -83,9 +83,9 @@ const styles = StyleSheet.create({
     elevation: 1
   },
   disabled: {
-    backgroundColor: colors.gray600,
+    backgroundColor: colors.gray700,
     borderColor: "rgba(255,255,255,0.05)",
-    opacity: 0.66
+    opacity: 0.82
   },
   selected: {
     backgroundColor: colors.primary,

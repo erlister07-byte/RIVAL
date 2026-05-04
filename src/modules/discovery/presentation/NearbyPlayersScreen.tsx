@@ -23,14 +23,14 @@ import { PlayerListItem } from "@/shared/components/PlayerListItem";
 import { PlayerListSkeleton } from "@/shared/components/PlayerListSkeleton";
 import { Screen } from "@/shared/components/Screen";
 import { formatDateTime } from "@/shared/lib/format";
-import { getUserSafeErrorMessage } from "@/shared/lib/serviceError";
+import { getDiagnosticErrorMessage, getUserSafeErrorMessage } from "@/shared/lib/serviceError";
 
 type Props = NativeStackScreenProps<AppStackParamList, "NearbyPlayers">;
 
 const timingOptions: AvailabilityStatus[] = ["now", "today", "this_week"];
 
 export function NearbyPlayersScreen({ navigation, route }: Props) {
-  const { currentUser } = useAppState();
+  const { currentUser, isHydratingProfile } = useAppState();
   const enabledSports = getEnabledSportConfigs();
   const isPlayNowMode = route.params?.mode === "play_now";
   const [sport, setSport] = useState(route.params?.sport ?? DEFAULT_LAUNCH_SPORT);
@@ -42,6 +42,20 @@ export function NearbyPlayersScreen({ navigation, route }: Props) {
   const [actionError, setActionError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const [joiningChallengeId, setJoiningChallengeId] = useState<string | null>(null);
+
+  if (!currentUser?.id && isHydratingProfile) {
+    return (
+      <Screen scrollable={false}>
+        <View style={styles.container}>
+          <Card>
+            <Text style={styles.errorTitle}>Loading your player profile</Text>
+            <Text style={styles.stateText}>Nearby matches will appear once your profile finishes hydrating.</Text>
+          </Card>
+          <PlayerListSkeleton />
+        </View>
+      </Screen>
+    );
+  }
 
   useEffect(() => {
     let isActive = true;
@@ -264,7 +278,12 @@ export function NearbyPlayersScreen({ navigation, route }: Props) {
         ) : error ? (
           <Card>
             <Text style={styles.errorTitle}>{isPlayNowMode ? "Could not load Quick Match" : "Could not load players"}</Text>
-            <Text style={styles.stateText}>{error}</Text>
+            <Text style={styles.stateText}>
+              {getDiagnosticErrorMessage(
+                { message: error },
+                isPlayNowMode ? "Unable to load Quick Match right now." : "Unable to load nearby players right now."
+              )}
+            </Text>
             <Button label="Try Again" tone="secondary" onPress={() => setReloadKey((value) => value + 1)} />
           </Card>
         ) : isPlayNowMode ? (

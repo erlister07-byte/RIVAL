@@ -12,34 +12,28 @@ import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
 import { SPORT_CONFIGS, getSportIdBySlug } from "@/config/sports";
 import {
-  PlayStyleTag,
   Profile,
   RecentMatch,
-  RivalryRecord,
-  availabilityOptions,
-  getAvailabilityLabel,
-  playStyleTagOptions
+  RivalryRecord
 } from "@/core/types/models";
 import { subscribeToMatchActivity } from "@/services/matchService";
 import { formatRivalrySummary, getTopRivalries } from "@/services/rivalryService";
 import { getProfileStats, getRecentMatches } from "@/services/userService";
 import { uploadProfilePhoto } from "@/services/profilePhotoService";
-import { AvailabilityBadge } from "@/shared/components/AvailabilityBadge";
 import { Avatar } from "@/shared/components/Avatar";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
-import { Chip } from "@/shared/components/Chip";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { Screen } from "@/shared/components/Screen";
 import { SportBadge } from "@/shared/components/SportBadge";
-import { StatPill } from "@/shared/components/StatPill";
 import { formatDateTime } from "@/shared/lib/format";
 import { debugError, debugLog, getSafeErrorPayload } from "@/shared/lib/logger";
+import { getDiagnosticErrorMessage } from "@/shared/lib/serviceError";
 
 type Props = BottomTabScreenProps<MainTabParamList, "Profile">;
 
 export function ProfileScreen({ navigation }: Props) {
-  const { currentUser, logout, updateAvailability, updatePlayStyleTags } = useAppState();
+  const { currentUser, logout, isHydratingProfile } = useAppState();
   const isFocused = useIsFocused();
   const appNavigation = navigation.getParent<NativeStackNavigationProp<AppStackParamList>>();
   const [stats, setStats] = useState<Pick<Profile, "wins" | "losses" | "matchesPlayed">>({
@@ -55,27 +49,34 @@ export function ProfileScreen({ navigation }: Props) {
   const [avatarUrlOverride, setAvatarUrlOverride] = useState<string | null>(null);
   const [avatarVersion, setAvatarVersion] = useState<string | null>(null);
   const [avatarMessage, setAvatarMessage] = useState("");
-  const [playStyleMessage, setPlayStyleMessage] = useState("");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [updatingAvailability, setUpdatingAvailability] = useState(false);
-  const [updatingPlayStyle, setUpdatingPlayStyle] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
+  if (!currentUser?.id && isHydratingProfile) {
+    return (
+      <Screen>
+        <Card>
+          <Text style={styles.errorText}>Loading your profile…</Text>
+          <Text style={styles.rowMeta}>Stats, recent matches, and rivalry data will appear once hydration completes.</Text>
+        </Card>
+      </Screen>
+    );
+  }
+
   useEffect(() => {
-    if (!copyMessage && !avatarMessage && !playStyleMessage) {
+    if (!copyMessage && !avatarMessage) {
       return;
     }
 
     const timeoutId = setTimeout(() => {
       setCopyMessage("");
       setAvatarMessage("");
-      setPlayStyleMessage("");
     }, 2200);
 
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [avatarMessage, copyMessage, playStyleMessage]);
+  }, [avatarMessage, copyMessage]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -326,60 +327,6 @@ export function ProfileScreen({ navigation }: Props) {
     }
   }
 
-  async function handleAvailabilityChange(nextAvailability: Profile["availabilityStatus"]) {
-    if (!currentUser || updatingAvailability || nextAvailability === currentUser.availabilityStatus) {
-      return;
-    }
-
-    setUpdatingAvailability(true);
-
-    try {
-      await updateAvailability(nextAvailability);
-    } catch (updateError) {
-      setAvatarMessage(
-        updateError instanceof Error && updateError.message
-          ? updateError.message
-          : "Unable to update availability right now."
-      );
-    } finally {
-      setUpdatingAvailability(false);
-    }
-  }
-
-  async function handlePlayStyleToggle(tag: PlayStyleTag) {
-    if (!currentUser || updatingPlayStyle) {
-      return;
-    }
-
-    const currentTags = currentUser.playStyleTags ?? [];
-    const nextTags = currentTags.includes(tag)
-      ? currentTags.filter((item) => item !== tag)
-      : currentTags.length >= 3
-        ? currentTags
-        : [...currentTags, tag];
-
-    if (!currentTags.includes(tag) && currentTags.length >= 3) {
-      setPlayStyleMessage("Choose up to 3.");
-      return;
-    }
-
-    setUpdatingPlayStyle(true);
-    setPlayStyleMessage("");
-
-    try {
-      await updatePlayStyleTags(nextTags);
-      setPlayStyleMessage("Play style updated");
-    } catch (updateError) {
-      setPlayStyleMessage(
-        updateError instanceof Error && updateError.message
-          ? updateError.message
-          : "Unable to update play style right now."
-      );
-    } finally {
-      setUpdatingPlayStyle(false);
-    }
-  }
-
   return (
     <Screen>
       <Card>
@@ -448,54 +395,30 @@ export function ProfileScreen({ navigation }: Props) {
         </View>
         {copyMessage ? <Text style={styles.copyMessage}>{copyMessage}</Text> : null}
         {avatarMessage ? <Text style={styles.copyMessage}>{avatarMessage}</Text> : null}
-        {playStyleMessage ? <Text style={styles.copyMessage}>{playStyleMessage}</Text> : null}
-      </Card>
-
-      <Card>
-        <Text style={styles.kicker}>Availability</Text>
-        <View style={styles.availabilityHeader}>
-          <AvailabilityBadge status={currentUser?.availabilityStatus ?? "unavailable"} />
-          <Text style={styles.rowMeta}>
-            Let nearby players know when you are easiest to challenge.
-          </Text>
-        </View>
-        <View style={styles.availabilityWrap}>
-          {availabilityOptions.map((option) => (
-            <Chip
-              key={option}
-              label={getAvailabilityLabel(option)}
-              selected={currentUser?.availabilityStatus === option}
-              disabled={updatingAvailability}
-              onPress={() => void handleAvailabilityChange(option)}
-            />
-          ))}
-        </View>
-      </Card>
-
-      <Card>
-        <Text style={styles.kicker}>Play Style</Text>
-        <Text style={styles.sectionHeader}>How you like to play</Text>
-        <Text style={styles.rowMeta}>Help others know what kind of game to expect. Choose up to 3.</Text>
-        <View style={styles.availabilityWrap}>
-          {playStyleTagOptions.map((option) => (
-            <Chip
-              key={option.value}
-              label={option.label}
-              selected={currentUser?.playStyleTags.includes(option.value) ?? false}
-              disabled={updatingPlayStyle}
-              onPress={() => void handlePlayStyleToggle(option.value)}
-            />
-          ))}
-        </View>
       </Card>
 
       <Card>
         <Text style={styles.kicker}>Performance</Text>
         <Text style={styles.sectionHeader}>Stats</Text>
         <View style={styles.statsRow}>
-          <StatPill label="Wins" value={stats.wins} />
-          <StatPill label="Losses" value={stats.losses} />
-          <StatPill label="Played" value={stats.matchesPlayed} />
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{stats.wins}</Text>
+            <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit>
+              WINS
+            </Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{stats.losses}</Text>
+            <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit>
+              LOSSES
+            </Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{stats.matchesPlayed}</Text>
+            <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit>
+              MATCHES
+            </Text>
+          </View>
         </View>
       </Card>
 
@@ -535,7 +458,7 @@ export function ProfileScreen({ navigation }: Props) {
           </View>
         ) : error ? (
           <View style={styles.stateContainer}>
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.errorText}>{getDiagnosticErrorMessage(error, "Unable to load profile data right now.")}</Text>
           </View>
         ) : recentMatches.length === 0 ? (
           <>
@@ -603,15 +526,32 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: "row",
-    gap: spacing.md
+    gap: spacing.md,
+    justifyContent: "space-between"
   },
-  availabilityHeader: {
-    gap: spacing.xs
+  statCard: {
+    flex: 1,
+    minWidth: 92,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted
   },
-  availabilityWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.xs
+  statValue: {
+    color: colors.text,
+    fontWeight: "800",
+    fontSize: typography.heading,
+    textAlign: "center"
+  },
+  statLabel: {
+    color: colors.textMuted,
+    fontWeight: "800",
+    fontSize: typography.overline,
+    letterSpacing: 0.8,
+    textAlign: "center",
+    width: "100%"
   },
   sectionHeader: {
     fontWeight: "700",

@@ -22,11 +22,12 @@ import { Screen } from "@/shared/components/Screen";
 import { openBetaFeedbackEmail } from "@/shared/lib/betaFeedback";
 import { formatDateTime } from "@/shared/lib/format";
 import { debugError, debugLog } from "@/shared/lib/logger";
+import { getDiagnosticErrorMessage } from "@/shared/lib/serviceError";
 
 type Props = NativeStackScreenProps<AppStackParamList, "ResultsInbox">;
 
 export function ResultsInboxScreen({ navigation }: Props) {
-  const { currentUser, matches, challenges } = useAppState();
+  const { currentUser, matches, challenges, isHydratingProfile } = useAppState();
   const isFocused = useIsFocused();
   const [opponentNames, setOpponentNames] = useState<Record<string, string>>({});
   const [liveMatches, setLiveMatches] = useState(matches);
@@ -34,6 +35,17 @@ export function ResultsInboxScreen({ navigation }: Props) {
   const [loadingNames, setLoadingNames] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+
+  if (!currentUser?.id && isHydratingProfile) {
+    return (
+      <Screen>
+        <Card>
+          <Text style={styles.sectionTitle}>Match Results</Text>
+          <Text style={styles.helperText}>We’re restoring your profile before loading actionable matches.</Text>
+        </Card>
+      </Screen>
+    );
+  }
 
   useEffect(() => {
     setLiveMatches(matches);
@@ -69,7 +81,7 @@ export function ResultsInboxScreen({ navigation }: Props) {
         debugError("[ResultsInboxScreen] failed to refresh matches", error, {
           profileId: currentUser?.id
         });
-        setRefreshError("Live match updates are delayed. Try refreshing this screen.");
+        setRefreshError(getDiagnosticErrorMessage(error, "Live match updates are delayed. Try refreshing this screen."));
       } finally {
         if (isActive) {
           setLoadingMatches(false);
@@ -104,7 +116,7 @@ export function ResultsInboxScreen({ navigation }: Props) {
           debugError("[ResultsInboxScreen] failed to refresh matches from realtime", error, {
             profileId: currentUser.id
           });
-          setRefreshError("Live match updates are delayed. Try refreshing this screen.");
+          setRefreshError(getDiagnosticErrorMessage(error, "Live match updates are delayed. Try refreshing this screen."));
         })
         .finally(() => {
           setLoadingMatches(false);

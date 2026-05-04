@@ -31,7 +31,7 @@ import { Badge } from "@/components/ui/Badge";
 import { formatDateTime } from "@/shared/lib/format";
 import { debugError, debugLog } from "@/shared/lib/logger";
 import { openBetaFeedbackEmail } from "@/shared/lib/betaFeedback";
-import { getUserSafeErrorMessage } from "@/shared/lib/serviceError";
+import { getDiagnosticErrorMessage, getUserSafeErrorMessage } from "@/shared/lib/serviceError";
 import { useTimedSuccess } from "@/shared/lib/useTimedSuccess";
 
 type Props = CompositeScreenProps<
@@ -40,7 +40,7 @@ type Props = CompositeScreenProps<
 >;
 
 export function ChallengeInboxScreen({ navigation }: Props) {
-  const { currentUser, respondToChallenge } = useAppState();
+  const { currentUser, respondToChallenge, isHydratingProfile } = useAppState();
   const isFocused = useIsFocused();
   const [activeTab, setActiveTab] = useState<"received" | "sent">("received");
   const [receivedChallenges, setReceivedChallenges] = useState<ChallengeInboxItem[]>([]);
@@ -55,6 +55,17 @@ export function ChallengeInboxScreen({ navigation }: Props) {
     acceptedOutgoingCount: number;
     totalCount: number;
   } | null>(null);
+
+  if (!currentUser?.id && isHydratingProfile) {
+    return (
+      <Screen>
+        <Card>
+          <Text style={styles.errorTitle}>Loading your challenge inbox</Text>
+          <Text style={styles.stateText}>We’re reconnecting your profile and challenge activity.</Text>
+        </Card>
+      </Screen>
+    );
+  }
 
   useEffect(() => {
     let isActive = true;
@@ -142,6 +153,8 @@ export function ChallengeInboxScreen({ navigation }: Props) {
   }, [currentUser?.id]);
 
   const items = activeTab === "received" ? receivedChallenges : sentChallenges;
+  const totalChallenges = receivedChallenges.length + sentChallenges.length;
+  const isCompletelyEmpty = !loading && !error && totalChallenges === 0;
 
   async function handleResponse(challenge: ChallengeInboxItem, status: "accepted" | "declined") {
     debugLog("[ChallengeInboxScreen] handling challenge response", {
@@ -235,7 +248,7 @@ export function ChallengeInboxScreen({ navigation }: Props) {
   return (
     <Screen>
       {success ? <SuccessBanner title={success.title} hint={success.hint} onDismiss={clearSuccess} /> : null}
-      {newActivitySummary && newActivitySummary.totalCount > 0 ? (
+      {!isCompletelyEmpty && newActivitySummary && newActivitySummary.totalCount > 0 ? (
         <Card style={styles.activityBanner}>
           <Text style={styles.activityBannerTitle}>New challenge activity</Text>
           <Text style={styles.activityBannerText}>
@@ -250,32 +263,34 @@ export function ChallengeInboxScreen({ navigation }: Props) {
         </Card>
       ) : null}
 
-      <Card>
-        <View style={styles.tabs}>
-          <Chip
-            label={`Received (${receivedChallenges.length})`}
-            selected={activeTab === "received"}
-            onPress={() => setActiveTab("received")}
+      {!isCompletelyEmpty ? (
+        <Card>
+          <View style={styles.tabs}>
+            <Chip
+              label={`Received (${receivedChallenges.length})`}
+              selected={activeTab === "received"}
+              onPress={() => setActiveTab("received")}
+            />
+            <Chip
+              label={`Sent (${sentChallenges.length})`}
+              selected={activeTab === "sent"}
+              onPress={() => setActiveTab("sent")}
+            />
+          </View>
+          <Button label="Refresh Inbox" tone="secondary" onPress={() => setReloadKey((value) => value + 1)} />
+          <Button
+            label="Report Beta Issue"
+            tone="secondary"
+            onPress={() =>
+              void openBetaFeedbackEmail({
+                screen: "ChallengeInbox",
+                profileId: currentUser?.id ?? null,
+                status: activeTab
+              })
+            }
           />
-          <Chip
-            label={`Sent (${sentChallenges.length})`}
-            selected={activeTab === "sent"}
-            onPress={() => setActiveTab("sent")}
-          />
-        </View>
-        <Button label="Refresh Inbox" tone="secondary" onPress={() => setReloadKey((value) => value + 1)} />
-        <Button
-          label="Report Beta Issue"
-          tone="secondary"
-          onPress={() =>
-            void openBetaFeedbackEmail({
-              screen: "ChallengeInbox",
-              profileId: currentUser?.id ?? null,
-              status: activeTab
-            })
-          }
-        />
-      </Card>
+        </Card>
+      ) : null}
 
       {loading ? (
         <View style={styles.stateContainer}>
@@ -285,25 +300,28 @@ export function ChallengeInboxScreen({ navigation }: Props) {
       ) : error ? (
         <Card>
           <Text style={styles.errorTitle}>Could not load challenge inbox</Text>
-          <Text style={styles.stateText}>{error}</Text>
+          <Text style={styles.stateText}>{getDiagnosticErrorMessage(error, "Unable to load challenges right now.")}</Text>
           <Button label="Try Again" onPress={() => setReloadKey((value) => value + 1)} />
+        </Card>
+      ) : isCompletelyEmpty ? (
+        <Card style={styles.emptyStateCard}>
+          <EmptyState
+            title="No matches yet"
+            description="Find a rival and play your first game today."
+          />
+          <Button label="Create Challenge" onPress={() => navigation.navigate("CreateChallenge")} />
         </Card>
       ) : items.length === 0 ? (
         <Card>
           <EmptyState
-            title={activeTab === "received" ? "No active challenges waiting on you" : "No active challenges sent yet"}
+            title={activeTab === "received" ? "No active challenges" : "No active challenges sent yet"}
             description={
               activeTab === "received"
                 ? "Find a nearby player and start your first match, or check back when someone challenges you."
                 : "Find a nearby player or challenge a friend by username to start your next match."
             }
           />
-          <Button
-            label={activeTab === "received" ? "Find Nearby Players" : "Challenge a Player"}
-            onPress={() =>
-              activeTab === "received" ? navigation.navigate("NearbyPlayers") : navigation.navigate("CreateChallenge")
-            }
-          />
+          <Button label="Challenge a Player" onPress={() => navigation.navigate("CreateChallenge")} />
         </Card>
       ) : (
         items.map((challenge) => (
@@ -360,7 +378,9 @@ export function ChallengeInboxScreen({ navigation }: Props) {
         ))
       )}
 
-      <Button label="Challenge a Player" onPress={() => navigation.navigate("CreateChallenge")} />
+      {!isCompletelyEmpty ? (
+        <Button label="Challenge a Player" onPress={() => navigation.navigate("CreateChallenge")} />
+      ) : null}
     </Screen>
   );
 }
@@ -416,5 +436,8 @@ const styles = StyleSheet.create({
   activityBannerText: {
     color: colors.text,
     lineHeight: 22
+  },
+  emptyStateCard: {
+    paddingVertical: spacing.xxxl
   }
 });

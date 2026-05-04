@@ -13,12 +13,13 @@ import { Card } from "@/shared/components/Card";
 import { Chip } from "@/shared/components/Chip";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { Screen } from "@/shared/components/Screen";
+import { getDiagnosticErrorMessage } from "@/shared/lib/serviceError";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Leaderboard">;
 type SportRow = Database["public"]["Tables"]["sports"]["Row"];
 
 export function LeaderboardScreen({ navigation }: Props) {
-  const { currentUser } = useAppState();
+  const { currentUser, isHydratingProfile } = useAppState();
   const [sports, setSports] = useState<SportRow[]>([]);
   const [selectedSportId, setSelectedSportId] = useState<string>("");
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -26,6 +27,17 @@ export function LeaderboardScreen({ navigation }: Props) {
   const [loadingSports, setLoadingSports] = useState(true);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   const [error, setError] = useState("");
+
+  if (!currentUser?.id && isHydratingProfile) {
+    return (
+      <Screen scrollable={false}>
+        <Card>
+          <Text style={styles.errorTitle}>Loading leaderboard</Text>
+          <Text style={styles.stateText}>We’re restoring your profile before fetching rankings.</Text>
+        </Card>
+      </Screen>
+    );
+  }
 
   useEffect(() => {
     let isActive = true;
@@ -165,7 +177,7 @@ export function LeaderboardScreen({ navigation }: Props) {
       ) : error ? (
         <Card>
           <Text style={styles.errorTitle}>Could not load leaderboard</Text>
-          <Text style={styles.stateText}>{error}</Text>
+          <Text style={styles.stateText}>{getDiagnosticErrorMessage(error, "Unable to load leaderboard right now.")}</Text>
         </Card>
       ) : leaderboard.length === 0 ? (
         <Card>

@@ -41,9 +41,9 @@ type Props = NativeStackScreenProps<AppStackParamList, "CreateChallenge">;
 
 const STAKE_OPTIONS = [
   { type: "bragging_rights", label: "Bragging Rights", icon: "🏆", meta: "Default", placeholder: "Winner gets to brag!" },
-  { type: "coffee", label: "Coffee", icon: "☕", meta: "Optional preset", placeholder: "Loser buys coffee" },
-  { type: "drinks", label: "Drinks", icon: "🍺", meta: "Optional preset", placeholder: "Loser buys drinks" },
-  { type: "court_fee", label: "Court Fees", icon: "💰", meta: "Optional preset", placeholder: "Loser pays court fees" },
+  { type: "coffee", label: "Coffee", icon: "☕", meta: null, placeholder: "Loser buys coffee" },
+  { type: "drinks", label: "Drinks", icon: "🍺", meta: null, placeholder: "Loser buys drinks" },
+  { type: "court_fee", label: "Court Fees", icon: "💰", meta: null, placeholder: "Loser pays court fees" },
   { type: "custom", label: "Custom Stakes", icon: "✍️", meta: "Define your own terms", placeholder: "Example: Loser pays $10" }
 ] as const;
 
@@ -808,14 +808,16 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
                   >
                     {option.label}
                   </Text>
-                  <Text
-                    style={[
-                      styles.stakeOptionMeta,
-                      selectedStakeType === option.type ? styles.stakeOptionMetaSelected : null
-                    ]}
-                  >
-                    {option.meta}
-                  </Text>
+                  {option.meta ? (
+                    <Text
+                      style={[
+                        styles.stakeOptionMeta,
+                        selectedStakeType === option.type ? styles.stakeOptionMetaSelected : null
+                      ]}
+                    >
+                      {option.meta}
+                    </Text>
+                  ) : null}
                 </View>
                 {selectedStakeType === option.type ? <Badge label="Selected" tone="success" /> : null}
               </Pressable>

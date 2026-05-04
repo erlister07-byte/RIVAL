@@ -13,16 +13,28 @@ import { Card } from "@/shared/components/Card";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { Screen } from "@/shared/components/Screen";
 import { debugError, debugLog } from "@/shared/lib/logger";
+import { getDiagnosticErrorMessage } from "@/shared/lib/serviceError";
 
 type Props = BottomTabScreenProps<MainTabParamList, "ActivityFeed">;
 
 export function ActivityFeedScreen({ navigation }: Props) {
-  const { currentUser } = useAppState();
+  const { currentUser, isHydratingProfile } = useAppState();
   const appNavigation = navigation.getParent<import("@react-navigation/native-stack").NativeStackNavigationProp<AppStackParamList>>();
   const [items, setItems] = useState<ActivityFeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+
+  if (!currentUser?.id && isHydratingProfile) {
+    return (
+      <Screen>
+        <Card>
+          <Text style={styles.errorTitle}>Loading your activity feed</Text>
+          <Text style={styles.stateText}>We’re restoring your profile before requesting recent activity.</Text>
+        </Card>
+      </Screen>
+    );
+  }
 
   useEffect(() => {
     console.log("[ActivityFeedScreen] mounted", {
@@ -104,7 +116,7 @@ export function ActivityFeedScreen({ navigation }: Props) {
       ) : error ? (
         <Card>
           <Text style={styles.errorTitle}>Could not load activity</Text>
-          <Text style={styles.stateText}>{error}</Text>
+          <Text style={styles.stateText}>{getDiagnosticErrorMessage(error, "Unable to load activity feed right now.")}</Text>
           <Button label="Try Again" onPress={() => setReloadKey((value) => value + 1)} />
         </Card>
       ) : items.length === 0 ? (

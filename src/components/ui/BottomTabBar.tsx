@@ -20,7 +20,7 @@ type TabDefinition = {
 
 const tabs: TabDefinition[] = [
   { key: "Home", label: "Home", icon: "house", routeName: "Home" },
-  { key: "Challenges", label: "Challenges", icon: "mail", routeName: "ChallengeInbox" },
+  { key: "Challenges", label: "Inbox", icon: "mail", routeName: "ChallengeInbox" },
   { key: "Create", label: "Create", icon: "plus" },
   { key: "Activity", label: "Activity", icon: "activity", routeName: "ActivityFeed" },
   { key: "Profile", label: "Profile", icon: "user", routeName: "Profile" }
@@ -115,7 +115,11 @@ export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
                   </View>
                 ) : null}
               </View>
-              <Text style={[styles.label, active && styles.activeLabel, tab.key === "Create" && styles.createLabel]}>
+              <Text
+                numberOfLines={1}
+                ellipsizeMode="clip"
+                style={[styles.label, active && styles.activeLabel, tab.key === "Create" && styles.createLabel]}
+              >
                 {tab.label}
               </Text>
             </>
@@ -188,7 +192,8 @@ const styles = StyleSheet.create({
   item: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
+    minWidth: 0
   },
   iconWrap: {
     position: "relative",
@@ -196,21 +201,23 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   inactivePill: {
-    minHeight: 54,
-    minWidth: 62,
+    minHeight: 56,
+    minWidth: 0,
+    width: "100%",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.xs,
+    gap: spacing.xxs,
+    paddingHorizontal: 4,
     borderRadius: radius.lg
   },
   activePill: {
-    minHeight: 54,
-    minWidth: 62,
+    minHeight: 56,
+    minWidth: 0,
+    width: "100%",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.xs,
+    gap: spacing.xxs,
+    paddingHorizontal: 4,
     borderRadius: radius.lg,
     shadowColor: colors.primaryEnd,
     shadowOpacity: 0.18,
@@ -221,14 +228,17 @@ const styles = StyleSheet.create({
     }
   },
   createPill: {
-    minWidth: 64
+    minWidth: 0
   },
   label: {
     color: colors.gray400,
     fontSize: typography.caption,
     fontWeight: "700",
-    letterSpacing: 0.2,
-    lineHeight: 14
+    letterSpacing: 0.1,
+    lineHeight: 13,
+    textAlign: "center",
+    maxWidth: "100%",
+    flexShrink: 1
   },
   activeLabel: {
     color: colors.white

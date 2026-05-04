@@ -88,6 +88,7 @@ export type SessionStatus =
 
 type AppContextValue = {
   isBooting: boolean;
+  isHydratingProfile: boolean;
   isAuthenticated: boolean;
   sessionStatus: SessionStatus;
   authUser: FirebaseUser | null;
@@ -370,10 +371,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let isActive = true;
 
     async function loadNearbyPlayers() {
-      if (!currentUser?.id) {
+      if (!currentUser?.id || !currentUser.onboardingCompleted) {
         if (isActive) {
           setNearbyPlayers([]);
         }
+
+        if (currentUser?.id && !currentUser.onboardingCompleted) {
+          debugLog("[AppProvider] skipping nearby players until profile onboarding is complete", {
+            profileId: currentUser.id
+          });
+        }
+
         return;
       }
 
@@ -397,7 +405,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       isActive = false;
     };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, currentUser?.onboardingCompleted]);
 
   async function signUp(input: AuthFormInput) {
     const credentials = await createUserWithEmailAndPassword(
@@ -462,38 +470,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let profile: Profile;
 
     try {
-      const existingProfile = await getUserProfile({ firebaseUid: authUser.uid });
-      debugLog("[AppProvider] completeOnboarding profile lookup", {
+      debugLog("[AppProvider] upserting profile during onboarding", {
         firebaseUid: authUser.uid,
-        existingProfileId: existingProfile?.id ?? null,
-        existingOnboardingCompleted: existingProfile?.onboardingCompleted ?? null
+        onboardingCompleted: true
       });
-      if (existingProfile) {
-        debugLog("[AppProvider] updating existing profile during onboarding", {
-          firebaseUid: authUser.uid,
-          profileId: existingProfile.id
-        });
-        profile = await updateUserProfile(existingProfile.id, {
-          displayName: input.displayName,
-          vancouverArea: input.vancouverArea,
-          challengeRadiusKm: input.challengeRadiusKm,
-          onboardingCompleted: true,
-          sports
-        });
-      } else {
-        debugLog("[AppProvider] creating new profile during onboarding", {
-          firebaseUid: authUser.uid
-        });
-        profile = await createUserProfile({
-          firebaseUid: authUser.uid,
-          email: authUser.email ?? "",
-          displayName: input.displayName,
-          vancouverArea: input.vancouverArea,
-          challengeRadiusKm: input.challengeRadiusKm,
-          onboardingCompleted: true,
-          sports
-        });
-      }
+      profile = await createUserProfile({
+        firebaseUid: authUser.uid,
+        email: authUser.email ?? "",
+        displayName: input.displayName,
+        vancouverArea: input.vancouverArea,
+        challengeRadiusKm: input.challengeRadiusKm,
+        onboardingCompleted: true,
+        sports
+      });
     } catch (error) {
       throw new Error(getErrorMessage(error, "Unable to update onboarding."));
     }
@@ -764,6 +753,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       isBooting,
+      isHydratingProfile,
       isAuthenticated,
       sessionStatus,
       authUser,
@@ -794,6 +784,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       currentUser,
       isAuthenticated,
       isBooting,
+      isHydratingProfile,
       matches,
       nearbyPlayers,
       updateAvailability,

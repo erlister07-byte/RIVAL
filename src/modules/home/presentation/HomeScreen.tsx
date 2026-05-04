@@ -2,9 +2,8 @@ import { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import { CompositeScreenProps } from "@react-navigation/native";
 import { useIsFocused } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { Clock3, Swords, Users } from "lucide-react-native";
 
 import { AppStackParamList, MainTabParamList } from "@/application/navigation/types";
 import { colors, spacing, typography } from "@/application/theme";
@@ -54,12 +53,6 @@ export function HomeScreen({ navigation }: Props) {
   const activeSport =
     currentUser?.sports.find((sport) => sport.sport === DEFAULT_LAUNCH_SPORT) ??
     currentUser?.sports[0];
-  const pendingInbox = challenges.filter(
-    (challenge) => challenge.opponentProfileId === currentUser?.id && challenge.status === "pending"
-  ).length;
-  const pendingOutgoing = challenges.filter(
-    (challenge) => challenge.challengerProfileId === currentUser?.id && challenge.status === "pending"
-  ).length;
   const resultActions = matches.filter((match) => isActionableResultMatch(match, currentUser?.id));
   const defaultPlayTiming = currentUser?.availabilityStatus === "unavailable" ? "today" : currentUser?.availabilityStatus ?? "today";
   const latestConfirmedResult = recentMatches[0];
@@ -149,50 +142,26 @@ export function HomeScreen({ navigation }: Props) {
     };
   }, [currentUser?.id, isFocused, refreshHomeData]);
 
-  const actionSummary = useMemo(() => {
-    if (resultActions.length > 0) {
-      return `${resultActions.length} ${resultActions.length === 1 ? "match needs" : "matches need"} a result action.`;
-    }
-
-    if (pendingInbox > 0) {
-      return `${pendingInbox} ${pendingInbox === 1 ? "challenge is" : "challenges are"} waiting for your response.`;
-    }
-
-    if (pendingOutgoing > 0) {
-      return `${pendingOutgoing} ${pendingOutgoing === 1 ? "challenge is" : "challenges are"} still waiting on an opponent.`;
-    }
-
-    return "You are clear. Start a new match while your board is empty.";
-  }, [pendingInbox, pendingOutgoing, resultActions.length]);
-
   return (
     <Screen>
-      <Card>
-        <Text style={styles.kicker}>Get In The Game</Text>
-        <Text style={styles.heroTitle}>Quick Match!</Text>
-        <Text style={styles.heroSubtitle}>
-          Find a rival. Play now.
-        </Text>
+      <Card style={styles.quickMatchCard}>
+          <Text style={styles.kicker}>Get In The Game</Text>
+          <Text style={styles.heroTitle}>Quick Match!</Text>
+          <Text style={styles.heroSubtitle}>
+            Find someone playing now. Jump in.
+          </Text>
 
-        <Button
-          label="Play Now"
-          onPress={() =>
-            navigation.navigate("NearbyPlayers", {
-              mode: "play_now",
-              sport: activeSport?.sport ?? DEFAULT_LAUNCH_SPORT,
-              availability: defaultPlayTiming
-            })
-          }
-        />
-      </Card>
-
-      <Card style={styles.recordCard}>
-        <Text style={styles.kicker}>Your Record</Text>
-        <Text style={styles.recordText}>
-          {currentUser?.wins ?? 0}-{currentUser?.losses ?? 0} • {currentUser?.matchesPlayed ?? 0}{" "}
-          {currentUser?.matchesPlayed === 1 ? "match played" : "matches played"}
-        </Text>
-      </Card>
+          <Button
+            label="Play Now"
+            onPress={() =>
+              navigation.navigate("NearbyPlayers", {
+                mode: "play_now",
+                sport: activeSport?.sport ?? DEFAULT_LAUNCH_SPORT,
+                availability: defaultPlayTiming
+              })
+            }
+          />
+        </Card>
 
       {latestConfirmedResult ? (
         <Card style={styles.recentResultCard}>
@@ -213,47 +182,17 @@ export function HomeScreen({ navigation }: Props) {
 
       <Card>
         <Text style={styles.kicker}>Start A Rivalry</Text>
-        <Text style={styles.cardTitle}>Create a challenge</Text>
-        <Text style={styles.cardText}>Find a rival. Choose the stakes.</Text>
+        <Text style={styles.cardTitle}>Start a Rivalry</Text>
+        <Text style={styles.cardText}>Challenge a friend or open it up.</Text>
 
         <View style={styles.createActions}>
           <Button label="Challenge a Friend" onPress={() => navigation.navigate("FriendSearch")} />
           <Button
-            label="Create an Open Challenge"
+            label="Post Open Challenge"
             tone="secondary"
             onPress={() => navigation.navigate("CreateChallenge", { mode: "open" })}
           />
         </View>
-      </Card>
-
-      <Card>
-        <Text style={styles.kicker}>Needs Your Attention</Text>
-        <Text style={styles.cardTitle}>Keep the board moving</Text>
-        <Text style={styles.cardText}>{actionSummary}</Text>
-
-        <View style={styles.queueGrid}>
-          <View style={styles.queueTile}>
-            <Clock3 size={18} color={colors.primary} strokeWidth={2.2} />
-            <Text style={styles.queueValue}>{pendingInbox}</Text>
-            <Text style={styles.queueLabel}>Incoming</Text>
-          </View>
-          <View style={styles.queueTile}>
-            <Swords size={18} color={colors.primary} strokeWidth={2.2} />
-            <Text style={styles.queueValue}>{resultActions.length}</Text>
-            <Text style={styles.queueLabel}>Results</Text>
-          </View>
-          <View style={styles.queueTile}>
-            <Users size={18} color={colors.primary} strokeWidth={2.2} />
-            <Text style={styles.queueValue}>{pendingOutgoing}</Text>
-            <Text style={styles.queueLabel}>Sent</Text>
-          </View>
-        </View>
-
-        {resultActions.length > 0 ? (
-          <Button label="Open Match Results" onPress={() => navigation.navigate("ResultsInbox")} />
-        ) : (
-          <Button label="Open Challenge Inbox" onPress={() => navigation.navigate("ChallengeInbox")} />
-        )}
       </Card>
 
       <Card>
@@ -353,7 +292,9 @@ export function HomeScreen({ navigation }: Props) {
                 screen: "Home",
                 profileId: currentUser?.id ?? null,
                 extra: {
-                  pendingChallenges: pendingInbox,
+                  pendingChallenges: challenges.filter(
+                    (challenge) => challenge.opponentProfileId === currentUser?.id && challenge.status === "pending"
+                  ).length,
                   pendingResults: resultActions.length
                 }
               })
@@ -384,13 +325,8 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     marginTop: -1
   },
-  recordCard: {
-    gap: spacing.xxs
-  },
-  recordText: {
-    color: colors.text,
-    fontSize: typography.bodyStrong,
-    fontWeight: "700"
+  quickMatchCard: {
+    paddingVertical: spacing.md
   },
   recentResultCard: {
     gap: spacing.xs
@@ -426,31 +362,6 @@ const styles = StyleSheet.create({
   createActions: {
     gap: spacing.xs,
     marginTop: 0
-  },
-  queueGrid: {
-    flexDirection: "row",
-    gap: spacing.xs
-  },
-  queueTile: {
-    flex: 1,
-    gap: spacing.xs,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
-    padding: 14
-  },
-  queueValue: {
-    color: colors.text,
-    fontSize: 28,
-    fontWeight: "800"
-  },
-  queueLabel: {
-    color: colors.textMuted,
-    fontSize: typography.caption,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.7
   },
   stateContainer: {
     gap: spacing.xs,

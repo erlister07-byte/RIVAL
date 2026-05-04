@@ -1,5 +1,5 @@
+import { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { Check } from "lucide-react-native";
 
 import { colors, radius, spacing, typography } from "@/application/theme";
 import { SportSlug } from "@/core/types/models";
@@ -17,6 +17,7 @@ type Props = {
   isEnabled?: boolean;
   onPress?: () => void;
   showLiveBadge?: boolean;
+  leadingAccessory?: ReactNode;
 };
 
 const ROW_GAP = 12;
@@ -30,7 +31,8 @@ export function SportSelectionRow({
   disabled = false,
   isEnabled,
   onPress,
-  showLiveBadge = false
+  showLiveBadge = false,
+  leadingAccessory
 }: Props) {
   const enabled = isEnabled ?? !disabled;
   const activeSelection = isSelected ?? selected;
@@ -46,7 +48,9 @@ export function SportSelectionRow({
         pressed && enabled ? styles.pressedRow : null
       ]}
     >
-      <SportBadge sport={sport} size="medium" isSelected={activeSelection} isEnabled={enabled} />
+      {leadingAccessory ?? (
+        <SportBadge sport={sport} size="medium" isSelected={activeSelection} isEnabled={enabled} />
+      )}
 
       <View style={styles.content}>
         <Text style={[styles.label, enabled ? styles.enabledLabel : styles.disabledLabel]}>{label}</Text>
@@ -54,14 +58,10 @@ export function SportSelectionRow({
       </View>
 
       <View style={styles.trailing}>
-        {activeSelection ? (
-          <View style={styles.checkWrap}>
-            <Check size={18} color={colors.primary} strokeWidth={2.6} />
-          </View>
-        ) : !enabled ? (
+        {!enabled ? (
           <Badge label="Coming Soon" tone="default" />
         ) : showLiveBadge ? (
-          <Badge label="Live" tone="success" />
+          <Badge label="LIVE" tone="success" />
         ) : null}
       </View>
     </Pressable>
@@ -139,16 +139,6 @@ const styles = StyleSheet.create({
   trailing: {
     alignItems: "flex-end",
     justifyContent: "center",
-    minWidth: 88
-  },
-  checkWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.primary
+    minWidth: 96
   }
 });

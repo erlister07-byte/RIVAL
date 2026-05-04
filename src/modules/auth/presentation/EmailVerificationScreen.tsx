@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAppState } from "@/application/providers/AppProvider";
 import { colors, spacing, typography } from "@/application/theme";
@@ -93,53 +94,67 @@ export function EmailVerificationScreen() {
       : "Resend Verification Email";
 
   return (
-    <View style={styles.container}>
-      <Card>
-        <Text style={styles.title}>Verify your email</Text>
-        <Text style={styles.body}>
-          Verify <Text style={styles.strong}>{authUser?.email ?? "your email"}</Text> before
-          continuing into RIVAL.
-        </Text>
-        <Text style={styles.secondary}>
-          Once you click the verification link in your inbox, return here and tap Check Again.
-        </Text>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        {message ? <Text style={styles.message}>{message}</Text> : null}
-      </Card>
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.container}>
+          <Card>
+            <Text style={styles.title}>Verify your email</Text>
+            <Text style={styles.body}>
+              Verify <Text style={styles.strong}>{authUser?.email ?? "your email"}</Text> before
+              continuing into RIVAL.
+            </Text>
+            <Text style={styles.secondary}>
+              Once you click the verification link in your inbox, return here and tap Check Again.
+            </Text>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {message ? <Text style={styles.message}>{message}</Text> : null}
+          </Card>
 
-      <Button
-        label={resendLabel}
-        onPress={handleResend}
-        loading={loadingAction === "resend"}
-        disabled={Boolean(loadingAction) || resendCooldownSeconds > 0}
-      />
-      {resendCooldownSeconds > 0 ? (
-        <Text style={styles.cooldown}>You can resend another verification email in {resendCooldownSeconds}s.</Text>
-      ) : null}
-      <Button
-        label="Check Again"
-        tone="secondary"
-        onPress={handleRefresh}
-        loading={loadingAction === "refresh"}
-        disabled={Boolean(loadingAction)}
-      />
-      <Button
-        label="Log Out"
-        tone="secondary"
-        onPress={handleLogout}
-        loading={loadingAction === "logout"}
-        disabled={Boolean(loadingAction)}
-      />
-    </View>
+          <Button
+            label={resendLabel}
+            onPress={handleResend}
+            loading={loadingAction === "resend"}
+            disabled={Boolean(loadingAction) || resendCooldownSeconds > 0}
+          />
+          {resendCooldownSeconds > 0 ? (
+            <Text style={styles.cooldown}>You can resend another verification email in {resendCooldownSeconds}s.</Text>
+          ) : null}
+          <Button
+            label="Check Again"
+            tone="secondary"
+            onPress={handleRefresh}
+            loading={loadingAction === "refresh"}
+            disabled={Boolean(loadingAction)}
+          />
+          <Button
+            label="Log Out"
+            tone="secondary"
+            onPress={handleLogout}
+            loading={loadingAction === "logout"}
+            disabled={Boolean(loadingAction)}
+          />
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    justifyContent: "center",
+    backgroundColor: colors.background
+  },
+  scrollContent: {
+    flexGrow: 1
+  },
+  container: {
     padding: spacing.md,
     gap: spacing.sm,
+    justifyContent: "center",
+    minHeight: "100%",
     backgroundColor: colors.background
   },
   title: {
