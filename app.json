@@ -12,18 +12,21 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.anonymous.rival"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#f4f1ea"
-      }
+      },
+      "package": "com.anonymous.rival"
     },
     "web": {
       "bundler": "metro"
     },
     "plugins": [
-      "expo-asset"
+      "expo-asset",
+      "./plugins/ios/withFmtFix"
     ]
   }
 }
