@@ -580,8 +580,10 @@ export function subscribeToMatchActivity(
   profileId: string,
   onRelevantChange: () => void
 ): RealtimeChannel {
+  const channelName = `match-activity-${profileId}-${Math.random().toString(36).slice(2, 10)}`;
+
   return supabase
-    .channel(`match-activity-${profileId}`)
+    .channel(channelName)
     .on(
       "postgres_changes",
       {

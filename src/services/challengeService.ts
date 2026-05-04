@@ -10,6 +10,7 @@ import { supabase } from "./supabaseClient";
 
 type ChallengeRow = Database["public"]["Tables"]["challenges"]["Row"];
 type ChallengeInsert = Database["public"]["Tables"]["challenges"]["Insert"];
+type ChallengeUpdate = Database["public"]["Tables"]["challenges"]["Update"];
 type ChallengeStatus = Database["public"]["Enums"]["challenge_status"];
 type SportRow = Database["public"]["Tables"]["sports"]["Row"];
 
@@ -278,20 +279,26 @@ async function updateChallengeStatus(
   challengeId: string,
   status: Extract<ChallengeStatus, "accepted" | "declined">
 ): Promise<Challenge> {
-  const timestampColumn = status === "accepted" ? "accepted_at" : "declined_at";
+  const updatePayload: ChallengeUpdate = status === "accepted"
+    ? {
+        status,
+        accepted_at: new Date().toISOString()
+      }
+    : {
+        status,
+        declined_at: new Date().toISOString()
+      };
+
   debugLog("[challengeService] updating challenge status", {
     challengeId,
     status,
-    timestampColumn
+    updatePayload
   });
 
   try {
     const { data, error } = await supabase
       .from("challenges")
-      .update({
-        status,
-        [timestampColumn]: new Date().toISOString()
-      })
+      .update(updatePayload)
       .eq("id", challengeId)
       .eq("status", "pending")
       .select("*, sports(*)");
@@ -560,8 +567,10 @@ export function subscribeToChallengeActivity(
   profileId: string,
   onRelevantChange: () => void
 ): RealtimeChannel {
+  const channelName = `challenge-activity-${profileId}-${Math.random().toString(36).slice(2, 10)}`;
+
   return supabase
-    .channel(`challenge-activity-${profileId}`)
+    .channel(channelName)
     .on(
       "postgres_changes",
       {
