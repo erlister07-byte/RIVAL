@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.get-activity-feed]
 verify_jwt = false
+
+[functions.upsert-profile]
+verify_jwt = false

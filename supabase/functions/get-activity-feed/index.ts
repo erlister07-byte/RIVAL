@@ -44,6 +44,22 @@ function jsonResponse(status: number, body: Record<string, unknown>) {
   });
 }
 
+function isMissingActivityEventsTableError(error: { code?: string; message?: string } | null | undefined) {
+  if (!error) {
+    return false;
+  }
+
+  const message = error.message ?? "";
+
+  return (
+    error.code === "PGRST205" ||
+    error.code === "42P01" ||
+    message.includes("public.activity_events") ||
+    message.includes("activity_events") && message.includes("schema cache") ||
+    message.includes("relation \"public.activity_events\" does not exist")
+  );
+}
+
 async function verifyFirebaseToken(authorizationHeader: string | null) {
   if (!authorizationHeader?.startsWith("Bearer ")) {
     throw new Error("Missing Firebase bearer token");
@@ -126,6 +142,20 @@ Deno.serve(async (request) => {
       .limit(limit);
 
     if (feedError) {
+      if (isMissingActivityEventsTableError(feedError)) {
+        console.warn("[get-activity-feed] activity_events table missing; returning empty feed", {
+          firebaseUid,
+          profileId: profile.id,
+          error: feedError
+        });
+
+        return jsonResponse(200, {
+          success: true,
+          profileId: profile.id,
+          feed: []
+        });
+      }
+
       console.error("[get-activity-feed] feed query failed", {
         firebaseUid,
         profileId: profile.id,

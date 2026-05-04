@@ -315,18 +315,18 @@ set search_path = public
 as $$
 declare
   auto_confirmed_match public.matches%rowtype;
-  current_time timestamptz := timezone('utc', now());
+  current_timestamp_utc timestamptz := timezone('utc', now());
 begin
   for auto_confirmed_match in
     update public.matches
     set
       result_status = 'confirmed',
-      confirmed_at = current_time,
+      confirmed_at = current_timestamp_utc,
       confirmed_by_profile_id = null,
       result_confirmation_method = 'auto',
-      updated_at = current_time
+      updated_at = current_timestamp_utc
     where result_status = 'pending_confirmation'
-      and coalesce(result_confirmation_deadline_at, submitted_at + interval '24 hours') <= current_time
+      and coalesce(result_confirmation_deadline_at, submitted_at + interval '24 hours') <= current_timestamp_utc
       and submitted_at is not null
       and winner_profile_id is not null
       and loser_profile_id is not null
@@ -336,8 +336,8 @@ begin
     update public.challenges
     set
       status = 'completed',
-      completed_at = coalesce(auto_confirmed_match.confirmed_at, current_time),
-      updated_at = current_time
+      completed_at = coalesce(auto_confirmed_match.confirmed_at, current_timestamp_utc),
+      updated_at = current_timestamp_utc
     where id = auto_confirmed_match.challenge_id
       and status <> 'completed';
 
