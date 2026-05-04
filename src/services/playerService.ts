@@ -125,11 +125,15 @@ export async function getNearbyPlayers(
   const currentProfile = await getUserProfile({ profileId: currentProfileId });
 
   if (!currentProfile) {
-    throw new Error("Current user profile is required for player discovery.");
+    debugLog("[playerService] skipping nearby players because current profile is not ready", {
+      currentProfileId
+    });
+    return [];
   }
 
   const currentCoordinates = getProfileCoordinates(currentProfile);
   const liveSportFilter = filters.sport && isSportEnabled(filters.sport) ? filters.sport : undefined;
+  const selectedSportId = liveSportFilter ? getSportIdBySlug(liveSportFilter) ?? null : null;
 
   if (filters.sport && !liveSportFilter) {
     return [];
@@ -159,31 +163,82 @@ export async function getNearbyPlayers(
     (profileIds ?? []).map((item) => getUserProfile({ profileId: item.id }))
   );
 
-  return players
-    .filter((player): player is Profile => Boolean(player))
-    .filter((player) => player.id !== currentProfile.id)
-    .filter((player) => {
-      const distanceKm = calculateDistanceKm(currentCoordinates, getProfileCoordinates(player));
-      const withinDistance = filters.maxDistanceKm === undefined || distanceKm <= filters.maxDistanceKm;
+  const filterReasons = {
+    missingProfile: 0,
+    selfExcluded: 0,
+    missingEnabledSport: 0,
+    outsideDistance: 0,
+    availabilityMismatch: 0,
+    sportMismatch: 0,
+    skillMismatch: 0
+  };
 
-      const liveSports = player.sports.filter((sport) => isSportEnabled(sport.sport));
-      const matchesAvailability = matchesAvailabilityIntent(player.availabilityStatus, filters.availability);
+  const filteredPlayers: NearbyPlayer[] = [];
 
-      const matchesSport =
-        liveSportFilter === undefined ||
-        liveSports.some((sport) => sport.sport === liveSportFilter);
+  players.forEach((player) => {
+    if (!player) {
+      filterReasons.missingProfile += 1;
+      return;
+    }
 
-      const matchesSkill =
-        filters.skillLevel === undefined ||
-        liveSports.some((sport) => sport.skillLevel === filters.skillLevel);
+    if (player.id === currentProfile.id) {
+      filterReasons.selfExcluded += 1;
+      return;
+    }
 
-      return liveSports.length > 0 && withinDistance && matchesSport && matchesSkill && matchesAvailability;
-    })
-    .map((player) => ({
+    const distanceKm = calculateDistanceKm(currentCoordinates, getProfileCoordinates(player));
+    const withinDistance = filters.maxDistanceKm === undefined || distanceKm <= filters.maxDistanceKm;
+    const liveSports = player.sports.filter((sport) => isSportEnabled(sport.sport));
+    const matchesAvailability = matchesAvailabilityIntent(player.availabilityStatus, filters.availability);
+    const matchesSport =
+      liveSportFilter === undefined ||
+      liveSports.some((sport) => sport.sport === liveSportFilter);
+    const matchesSkill =
+      filters.skillLevel === undefined ||
+      liveSports.some((sport) => sport.skillLevel === filters.skillLevel);
+
+    if (liveSports.length === 0) {
+      filterReasons.missingEnabledSport += 1;
+      return;
+    }
+
+    if (!withinDistance) {
+      filterReasons.outsideDistance += 1;
+      return;
+    }
+
+    if (!matchesAvailability) {
+      filterReasons.availabilityMismatch += 1;
+      return;
+    }
+
+    if (!matchesSport) {
+      filterReasons.sportMismatch += 1;
+      return;
+    }
+
+    if (!matchesSkill) {
+      filterReasons.skillMismatch += 1;
+      return;
+    }
+
+    filteredPlayers.push({
       ...player,
-      sports: player.sports.filter((sport) => isSportEnabled(sport.sport)),
+      sports: liveSports,
       distanceKm: calculateDistanceKm(currentCoordinates, getProfileCoordinates(player))
-    }));
+    });
+  });
+
+  debugLog("[playerService] nearby players filtered", {
+    currentProfileId,
+    selectedSportId,
+    selectedSport: liveSportFilter ?? null,
+    rawResults: (profileIds ?? []).length,
+    filteredResults: filteredPlayers.length,
+    reasons: filterReasons
+  });
+
+  return filteredPlayers;
 }
 
 export async function getSuggestedOpponents(
@@ -194,7 +249,11 @@ export async function getSuggestedOpponents(
   const currentProfile = await getUserProfile({ profileId: currentProfileId });
 
   if (!currentProfile) {
-    throw new Error("Current user profile is required for matchmaking suggestions.");
+    debugLog("[playerService] skipping suggested opponents because current profile is not ready", {
+      currentProfileId,
+      selectedSportId: selectedSportId ?? null
+    });
+    return [];
   }
 
   const selectedSport =
@@ -248,7 +307,7 @@ export async function getSuggestedOpponents(
     ((activityRows ?? []) as ActivityRow[]).map((row) => [row.id, new Date(row.updated_at).getTime()])
   );
 
-  return mergedPlayers
+  const suggestedPlayers = mergedPlayers
     .sort((left, right) => {
       const activityDelta = (lastActiveById.get(right.id) ?? 0) - (lastActiveById.get(left.id) ?? 0);
       if (activityDelta !== 0) {
@@ -280,4 +339,16 @@ export async function getSuggestedOpponents(
           ? "Recently active"
           : "Good match"
     }));
+
+  debugLog("[playerService] suggested opponents ready", {
+    currentProfileId,
+    selectedSportId: getSportIdBySlug(selectedSport) ?? null,
+    selectedSport,
+    strictCount: strictNearbyPlayers.length,
+    fallbackCount: fallbackNearbyPlayers.length,
+    mergedCount: mergedPlayers.length,
+    filteredResults: suggestedPlayers.length
+  });
+
+  return suggestedPlayers;
 }

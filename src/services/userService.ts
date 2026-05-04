@@ -4,11 +4,11 @@ import { DEFAULT_LAUNCH_SPORT } from "@/config/sports";
 import { isMissingColumnError, withOptionalFieldFallback } from "@/shared/lib/schemaDrift";
 import { debugLog } from "@/shared/lib/logger";
 
+import { firebaseAuth } from "./firebase";
 import { mapPlayerSummary } from "./playerMapper";
 import { supabase } from "./supabaseClient";
 
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
-type ProfileInsert = Database["public"]["Tables"]["profiles"]["Insert"];
 type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
 type ProfileSportRow = Database["public"]["Tables"]["profile_sports"]["Row"];
 type SportRow = Database["public"]["Tables"]["sports"]["Row"];
@@ -52,7 +52,12 @@ type ProfileWithRelations = ProfileRow & {
       sports: SportRow | null;
     }
   > | null;
-  profile_stats: ProfileStatsRow | null;
+  profile_stats: ProfileStatsRow | Array<ProfileStatsRow> | null;
+};
+
+type UpsertProfileResponse = {
+  error?: string;
+  profile?: ProfileWithRelations;
 };
 
 type FriendSearchRow = {
@@ -189,67 +194,62 @@ async function upsertProfileSports(
 }
 
 export async function createUserProfile(input: CreateUserProfileInput): Promise<Profile> {
-  const existingProfile = await getUserProfile({ firebaseUid: input.firebaseUid });
+  const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const currentFirebaseUser = firebaseAuth.currentUser;
 
-  if (existingProfile) {
-    if (input.sports?.length) {
-      await upsertProfileSports(existingProfile.id, input.sports);
-    }
-
-    return existingProfile;
+  if (!supabaseProjectUrl) {
+    throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
   }
 
-  const insertPayload: ProfileInsert = {
-    firebase_uid: input.firebaseUid,
-    email: input.email,
-    display_name: input.displayName,
-    username: input.displayName,
-    vancouver_area: input.vancouverArea,
-    challenge_radius_km: input.challengeRadiusKm,
-    availability_status: input.availabilityStatus ?? "unavailable",
-    latitude: input.latitude ?? null,
-    longitude: input.longitude ?? null,
-    onboarding_completed: input.onboardingCompleted ?? false
-  };
-
-  let { data: profileRow, error } = await supabase
-    .from("profiles")
-    .upsert(insertPayload, { onConflict: "firebase_uid" })
-    .select("id")
-    .single();
-
-  if (error && isMissingAvailabilityColumnError(error)) {
-    debugLog("[userService] create profile fallback without availability_status", {
-      firebaseUid: input.firebaseUid
-    });
-    const { availability_status: _ignoredAvailabilityStatus, ...legacyInsertPayload } = insertPayload;
-
-    ({ data: profileRow, error } = await supabase
-      .from("profiles")
-      .upsert(legacyInsertPayload, { onConflict: "firebase_uid" })
-      .select("id")
-      .single());
+  if (!supabaseAnonKey) {
+    throw new Error("Missing EXPO_PUBLIC_SUPABASE_ANON_KEY");
   }
 
-  if (error) {
-    throw error;
+  if (!currentFirebaseUser) {
+    throw new Error("You must be signed in to create a profile.");
   }
 
-  if (!profileRow) {
-    throw new Error("Profile not found after creation.");
+  const firebaseIdToken = await currentFirebaseUser.getIdToken();
+  const functionUrl = `${supabaseProjectUrl}/functions/v1/upsert-profile`;
+
+  debugLog("[userService] upserting profile via edge function", {
+    firebaseUid: currentFirebaseUser.uid,
+    requestedFirebaseUid: input.firebaseUid,
+    hasSports: Boolean(input.sports?.length)
+  });
+
+  const response = await fetch(functionUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${firebaseIdToken}`,
+      apikey: supabaseAnonKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      email: input.email,
+      displayName: input.displayName,
+      vancouverArea: input.vancouverArea,
+      challengeRadiusKm: input.challengeRadiusKm,
+      availabilityStatus: input.availabilityStatus,
+      latitude: input.latitude,
+      longitude: input.longitude,
+      onboardingCompleted: input.onboardingCompleted,
+      sports: input.sports
+    })
+  });
+
+  const payload = (await response.json().catch(() => null)) as UpsertProfileResponse | null;
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `Profile upsert failed with status ${response.status}`);
   }
 
-  if (input.sports?.length) {
-    await upsertProfileSports(profileRow.id, input.sports);
+  if (!payload?.profile) {
+    throw new Error("Profile not found after upsert.");
   }
 
-  const profile = await getUserProfile({ profileId: profileRow.id });
-
-  if (!profile) {
-    throw new Error("Profile not found after creation.");
-  }
-
-  return profile;
+  return mapProfile(payload.profile);
 }
 
 export async function getUserProfile({
@@ -383,15 +383,26 @@ export async function searchProfilesByUsername(
   const normalizedQuery = query.trim();
 
   if (normalizedQuery.length < 2) {
+    debugLog("[userService] skipping friend search below minimum query length", {
+      currentProfileId,
+      query: normalizedQuery
+    });
     return [];
   }
+
+  const searchFilter = `username.ilike.%${normalizedQuery}%,display_name.ilike.%${normalizedQuery}%`;
+
+  debugLog("[userService] searching profiles", {
+    currentProfileId,
+    query: normalizedQuery
+  });
 
   let { data, error } = await supabase
     .from("profiles")
     .select(getFriendSearchSelect(true))
     .eq("onboarding_completed", true)
     .neq("id", currentProfileId)
-    .ilike("username", `%${normalizedQuery}%`)
+    .or(searchFilter)
     .order("username", { ascending: true })
     .limit(20);
 
@@ -404,7 +415,7 @@ export async function searchProfilesByUsername(
       .select(getFriendSearchSelect(!isMissingAvailabilityColumnError(error), !isMissingPlayStyleTagsColumnError(error)))
       .eq("onboarding_completed", true)
       .neq("id", currentProfileId)
-      .ilike("username", `%${normalizedQuery}%`)
+      .or(searchFilter)
       .order("username", { ascending: true })
       .limit(20));
   }
@@ -414,8 +425,7 @@ export async function searchProfilesByUsername(
   }
 
   const rows = ((data ?? []) as unknown) as FriendSearchRow[];
-
-  return rows.map((row) => {
+  const results = rows.map((row) => {
     const activeSport = Array.isArray(row.profile_sports)
       ? row.profile_sports.find((item) => item.is_active && item.sports?.slug)
       : null;
@@ -433,6 +443,15 @@ export async function searchProfilesByUsername(
       primarySkillLevel: activeSport?.skill_level
     };
   });
+
+  debugLog("[userService] friend search completed", {
+    currentProfileId,
+    query: normalizedQuery,
+    rawResults: rows.length,
+    filteredResults: results.length
+  });
+
+  return results;
 }
 
 export async function getProfileStats(profileId: string): Promise<Pick<Profile, "wins" | "losses" | "matchesPlayed">> {

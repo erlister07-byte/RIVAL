@@ -1,6 +1,5 @@
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
-import { Persistence } from "firebase/auth";
 
 const STORAGE_PREFIX = "rival.auth.";
 
@@ -57,42 +56,3 @@ export const supabaseAuthStorage = {
   setItem,
   removeItem
 };
-
-type FirebasePersistenceAdapter = Persistence & {
-  _isAvailable: () => Promise<boolean>;
-  _set: (key: string, value: string) => Promise<void>;
-  _get: <T>(key: string) => Promise<T | null>;
-  _remove: (key: string) => Promise<void>;
-  _addListener: (_key: string, _listener: () => void) => void;
-  _removeListener: (_key: string, _listener: () => void) => void;
-};
-
-const firebaseSecurePersistenceAdapter: FirebasePersistenceAdapter = {
-  type: "LOCAL",
-  async _isAvailable() {
-    if (Platform.OS === "web") {
-      return getWebStorage() !== null;
-    }
-
-    return true;
-  },
-  async _set(key, value) {
-    await setItem(key, value);
-  },
-  async _get<T>(key: string): Promise<T | null> {
-    const value = await getItem(key);
-
-    if (!value) {
-      return null;
-    }
-
-    return JSON.parse(value) as T;
-  },
-  async _remove(key) {
-    await removeItem(key);
-  },
-  _addListener() {},
-  _removeListener() {}
-};
-
-export const firebaseSecurePersistence = firebaseSecurePersistenceAdapter as Persistence;
