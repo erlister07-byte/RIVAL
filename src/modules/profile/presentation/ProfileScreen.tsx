@@ -17,7 +17,7 @@ import {
   RivalryRecord
 } from "@/core/types/models";
 import { subscribeToMatchActivity } from "@/services/matchService";
-import { formatRivalrySummary, getTopRivalries } from "@/services/rivalryService";
+import { getRivalryHeadline, getRivalryRematchPrompt, getTopRivalries } from "@/services/rivalryService";
 import { getProfileStats, getRecentMatches } from "@/services/userService";
 import { uploadProfilePhoto } from "@/services/profilePhotoService";
 import { Avatar } from "@/shared/components/Avatar";
@@ -486,10 +486,15 @@ export function ProfileScreen({ navigation }: Props) {
                 </Text>
                 <Text style={styles.rowMeta}>{formatDateTime(match.date)}</Text>
                 {rivalry ? (
-                  <Text style={styles.rivalryMeta}>
-                    Record vs {match.opponentName}: {formatRivalrySummary(rivalry)}
+                  <>
+                    <Text style={styles.rivalryMeta}>{getRivalryHeadline(rivalry)}</Text>
+                    <Text style={styles.rivalryPrompt}>{getRivalryRematchPrompt(rivalry, currentUser?.id ?? "")}</Text>
+                  </>
+                ) : (
+                  <Text style={styles.rivalryPrompt}>
+                    {match.result === "loss" ? "Close one." : "Run it back?"}
                   </Text>
-                ) : null}
+                )}
                 <View style={styles.rematchAction}>
                   <Button
                     label="Challenge Again"
@@ -679,6 +684,10 @@ const styles = StyleSheet.create({
   },
   rivalryMeta: {
     color: colors.text,
+    fontWeight: "600"
+  },
+  rivalryPrompt: {
+    color: colors.textMuted,
     fontWeight: "600"
   },
   matchRow: {

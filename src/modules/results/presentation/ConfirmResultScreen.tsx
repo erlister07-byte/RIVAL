@@ -13,6 +13,8 @@ import {
   getMatchForConfirmation,
   subscribeToMatchActivity
 } from "@/services/matchService";
+import { RivalryRecord } from "@/core/types/models";
+import { getHeadToHeadRecord, getRivalryHeadline, getRivalryRematchPrompt } from "@/services/rivalryService";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
 import { EmptyState } from "@/shared/components/EmptyState";
@@ -35,6 +37,7 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
   const [actionLoading, setActionLoading] = useState<"confirm" | "reject" | null>(null);
   const [error, setError] = useState("");
   const [resolvedState, setResolvedState] = useState<"confirmed" | "rejected" | null>(null);
+  const [rivalryRecord, setRivalryRecord] = useState<RivalryRecord | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const { success, showSuccess, clearSuccess } = useTimedSuccess();
 
@@ -119,6 +122,46 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
     };
   }, [actionLoading, currentUser?.id, isFocused, route.params.matchId]);
 
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadRivalryRecord() {
+      if (!currentUser?.id || !match) {
+        if (isActive) {
+          setRivalryRecord(null);
+        }
+        return;
+      }
+
+      const opponentProfileId =
+        currentUser.id === match.challengerProfileId ? match.opponentProfileId : match.challengerProfileId;
+
+      try {
+        const nextRivalryRecord = await getHeadToHeadRecord(currentUser.id, opponentProfileId);
+
+        if (isActive) {
+          setRivalryRecord(nextRivalryRecord);
+        }
+      } catch (loadError) {
+        debugError("[ConfirmResultScreen] failed to load rivalry record", loadError, {
+          matchId: match.id,
+          currentUserId: currentUser.id,
+          opponentProfileId
+        });
+
+        if (isActive) {
+          setRivalryRecord(null);
+        }
+      }
+    }
+
+    void loadRivalryRecord();
+
+    return () => {
+      isActive = false;
+    };
+  }, [currentUser?.id, match]);
+
   if (loadingMatch) {
     return (
       <Screen>
@@ -200,6 +243,12 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
     stakeType: resolvedMatch.stakeType,
     stakeLabel: resolvedMatch.stakeLabel
   });
+  const rivalryHeadline = rivalryRecord ? getRivalryHeadline(rivalryRecord) : null;
+  const rivalryPrompt = rivalryRecord
+    ? getRivalryRematchPrompt(rivalryRecord, resolvedCurrentUser.id)
+    : confirmedResultDirection === "loss"
+      ? "Close one."
+      : "Run it back?";
 
   async function handleConfirm() {
     setActionLoading("confirm");
@@ -254,6 +303,11 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
           <Text style={styles.successSummary}>
             Confirmed result vs {nextOpponentName}. {confirmedStakeOutcome}
           </Text>
+        </Card>
+        <Card>
+          <Text style={styles.sectionTitle}>Competitive Loop</Text>
+          {rivalryHeadline ? <Text style={styles.rivalryHeadline}>{rivalryHeadline}</Text> : null}
+          <Text style={styles.rivalryPrompt}>{rivalryPrompt}</Text>
         </Card>
         <Button
           label="Challenge Again"
@@ -436,5 +490,14 @@ const styles = StyleSheet.create({
   successSummary: {
     color: colors.textMuted,
     lineHeight: 22
+  },
+  rivalryHeadline: {
+    color: colors.text,
+    fontWeight: "700",
+    fontSize: typography.bodyStrong
+  },
+  rivalryPrompt: {
+    color: colors.textMuted,
+    fontWeight: "600"
   }
 });

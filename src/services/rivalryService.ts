@@ -45,6 +45,32 @@ export function formatRivalrySummary(record: RivalryRecord) {
   return `${record.wins}-${record.losses}`;
 }
 
+export function getRivalryHeadline(record: RivalryRecord) {
+  const summary = formatRivalrySummary(record);
+
+  if (record.wins > record.losses) {
+    return `You lead ${record.opponentDisplayName} ${summary}`;
+  }
+
+  if (record.losses > record.wins) {
+    return `${record.opponentDisplayName} leads you ${summary}`;
+  }
+
+  return `Series tied ${summary}`;
+}
+
+export function getRivalryRematchPrompt(record: RivalryRecord, currentProfileId: string) {
+  if (record.wins === record.losses) {
+    return "Settle the score.";
+  }
+
+  if (record.latestWinnerProfileId === currentProfileId) {
+    return "Run it back?";
+  }
+
+  return "Close one.";
+}
+
 export async function getHeadToHeadRecord(
   currentProfileId: string,
   opponentProfileId: string,
