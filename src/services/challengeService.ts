@@ -2,6 +2,7 @@ import { Challenge, OpenChallenge } from "@/core/types/models";
 import { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { Database, Json } from "@/types/database";
 import { DEFAULT_LAUNCH_SPORT, getSportConfigById } from "@/config/sports";
+import { firebaseAuth } from "@/services/firebase";
 import { debugError, debugLog } from "@/shared/lib/logger";
 import { toServiceError } from "@/shared/lib/serviceError";
 
@@ -60,6 +61,12 @@ type OpenChallengeRow = {
     display_name: string;
     vancouver_area: string;
   } | null;
+};
+
+type CreateOpenChallengeResponse = {
+  success?: boolean;
+  challengeId?: string;
+  error?: string;
 };
 
 function getRealtimeChallengeRow(
@@ -403,6 +410,57 @@ export async function createChallenge(input: CreateChallengeInput): Promise<Chal
   try {
     if (!input.isOpen && !input.opponentProfileId) {
       throw new Error("Select an opponent first.");
+    }
+
+    if (input.isOpen) {
+      const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+      const currentFirebaseUser = firebaseAuth.currentUser;
+
+      if (!supabaseProjectUrl) {
+        throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
+      }
+
+      if (!supabaseAnonKey) {
+        throw new Error("Missing EXPO_PUBLIC_SUPABASE_ANON_KEY");
+      }
+
+      if (!currentFirebaseUser) {
+        throw new Error("You must be signed in to create an open challenge.");
+      }
+
+      const firebaseIdToken = await currentFirebaseUser.getIdToken();
+      const functionUrl = `${supabaseProjectUrl}/functions/v1/create-open-challenge`;
+
+      const response = await fetch(functionUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${firebaseIdToken}`,
+          apikey: supabaseAnonKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          sportId: input.sportId,
+          scheduledAt: input.scheduledAt,
+          locationName: input.locationName,
+          challengeType: input.challengeType,
+          stakeType: input.stakeType ?? DEFAULT_STAKE_TYPE,
+          stakeLabel: input.stakeLabel ?? DEFAULT_STAKE_LABEL,
+          stakeNote: input.stakeNote ?? null
+        })
+      });
+
+      const payload = (await response.json().catch(() => null)) as CreateOpenChallengeResponse | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? `Open challenge creation failed with status ${response.status}`);
+      }
+
+      if (!payload?.challengeId) {
+        throw new Error("Open challenge was created but no challenge id was returned.");
+      }
+
+      return await getChallengeById(payload.challengeId);
     }
 
     const payload: ChallengeInsert = {

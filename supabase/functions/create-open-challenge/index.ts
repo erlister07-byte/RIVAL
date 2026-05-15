@@ -72,6 +72,12 @@ function createSupabaseAdmin() {
   });
 }
 
+function shouldRetryWithoutStakeColumns(error: { code?: string; message?: string } | null) {
+  const message = error?.message ?? "";
+
+  return error?.code === "PGRST204" || message.includes("stake_type") || message.includes("stake_label");
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -100,6 +106,8 @@ Deno.serve(async (request) => {
       scheduledAt?: string;
       locationName?: string;
       challengeType?: "casual" | "practice" | "ranked";
+      stakeType?: string | null;
+      stakeLabel?: string | null;
       stakeNote?: string | null;
     };
 
@@ -138,9 +146,28 @@ Deno.serve(async (request) => {
       return jsonResponse(400, { error: "Missing required open challenge fields" });
     }
 
-    const { data: challenge, error: createError } = await supabaseAdmin
+    const insertPayload = {
+      sport_id: requestBody.sportId,
+      challenger_profile_id: profile.id,
+      opponent_profile_id: null,
+      challenge_type: requestBody.challengeType,
+      stake_type: requestBody.stakeType?.trim() ? requestBody.stakeType.trim() : "bragging_rights",
+      stake_label: requestBody.stakeLabel?.trim() ? requestBody.stakeLabel.trim() : "Bragging Rights",
+      stake_note: requestBody.stakeNote?.trim() ? requestBody.stakeNote.trim() : null,
+      scheduled_at: requestBody.scheduledAt,
+      location_name: requestBody.locationName.trim(),
+      status: "pending",
+      is_open: true
+    };
+
+    let { data: challenge, error: createError } = await supabaseAdmin
       .from("challenges")
-      .insert({
+      .insert(insertPayload)
+      .select("id")
+      .single();
+
+    if (createError && shouldRetryWithoutStakeColumns(createError)) {
+      const fallbackInsertPayload = {
         sport_id: requestBody.sportId,
         challenger_profile_id: profile.id,
         opponent_profile_id: null,
@@ -150,9 +177,14 @@ Deno.serve(async (request) => {
         location_name: requestBody.locationName.trim(),
         status: "pending",
         is_open: true
-      })
-      .select("id")
-      .single();
+      };
+
+      ({ data: challenge, error: createError } = await supabaseAdmin
+        .from("challenges")
+        .insert(fallbackInsertPayload)
+        .select("id")
+        .single());
+    }
 
     if (createError) {
       console.error("[create-open-challenge] insert failed", {
