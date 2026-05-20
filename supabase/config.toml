@@ -6,3 +6,12 @@ verify_jwt = false
 
 [functions.upsert-profile]
 verify_jwt = false
+
+[functions.create-open-challenge]
+verify_jwt = false
+
+[functions.accept-open-challenge]
+verify_jwt = false
+
+[functions.get-open-challenges]
+verify_jwt = false
