@@ -78,6 +78,42 @@ function shouldRetryWithoutStakeColumns(error: { code?: string; message?: string
   return error?.code === "PGRST204" || message.includes("stake_type") || message.includes("stake_label");
 }
 
+function mapChallengeResponse(row: {
+  id: string;
+  sport_id: number;
+  challenger_profile_id: string;
+  opponent_profile_id: string | null;
+  scheduled_at: string;
+  location_name: string;
+  challenge_type: "casual" | "practice" | "ranked";
+  stake_type?: string | null;
+  stake_label?: string | null;
+  stake_note?: string | null;
+  status: "pending" | "accepted" | "declined" | "completed" | "canceled";
+  created_at: string;
+  is_open: boolean;
+  sports?: {
+    slug: string;
+  } | null;
+}) {
+  return {
+    id: row.id,
+    sport_id: row.sport_id,
+    challenger_profile_id: row.challenger_profile_id,
+    opponent_profile_id: row.opponent_profile_id,
+    scheduled_at: row.scheduled_at,
+    location_name: row.location_name,
+    challenge_type: row.challenge_type,
+    stake_type: row.stake_type ?? "bragging_rights",
+    stake_label: row.stake_label ?? "Bragging Rights",
+    stake_note: row.stake_note ?? null,
+    status: row.status,
+    created_at: row.created_at,
+    is_open: row.is_open,
+    sports: row.sports ? { slug: row.sports.slug } : null
+  };
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -160,10 +196,15 @@ Deno.serve(async (request) => {
       is_open: true
     };
 
+    const fullSelect =
+      "id, sport_id, challenger_profile_id, opponent_profile_id, scheduled_at, location_name, challenge_type, stake_type, stake_label, stake_note, status, created_at, is_open, sports!inner(slug)";
+    const fallbackSelect =
+      "id, sport_id, challenger_profile_id, opponent_profile_id, scheduled_at, location_name, challenge_type, stake_note, status, created_at, is_open, sports!inner(slug)";
+
     let { data: challenge, error: createError } = await supabaseAdmin
       .from("challenges")
       .insert(insertPayload)
-      .select("id")
+      .select(fullSelect)
       .single();
 
     if (createError && shouldRetryWithoutStakeColumns(createError)) {
@@ -182,7 +223,7 @@ Deno.serve(async (request) => {
       ({ data: challenge, error: createError } = await supabaseAdmin
         .from("challenges")
         .insert(fallbackInsertPayload)
-        .select("id")
+        .select(fallbackSelect)
         .single());
     }
 
@@ -202,7 +243,7 @@ Deno.serve(async (request) => {
 
     return jsonResponse(200, {
       success: true,
-      challengeId: challenge.id
+      challenge: mapChallengeResponse(challenge)
     });
   } catch (error) {
     return jsonResponse(500, {

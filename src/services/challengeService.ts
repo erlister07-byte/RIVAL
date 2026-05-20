@@ -65,9 +65,46 @@ type OpenChallengeRow = {
 
 type CreateOpenChallengeResponse = {
   success?: boolean;
-  challengeId?: string;
+  challenge?: {
+    id: string;
+    sport_id: number;
+    challenger_profile_id: string;
+    opponent_profile_id: string | null;
+    scheduled_at: string;
+    location_name: string;
+    challenge_type: Database["public"]["Enums"]["challenge_type"];
+    stake_type?: string | null;
+    stake_label?: string | null;
+    stake_note?: string | null;
+    status: Database["public"]["Enums"]["challenge_status"];
+    created_at: string;
+    is_open: boolean;
+    sports?: {
+      slug: Database["public"]["Enums"]["sport_slug"];
+    } | null;
+  };
   error?: string;
 };
+
+function mapCreateOpenChallengeResponse(
+  row: NonNullable<CreateOpenChallengeResponse["challenge"]>
+): Challenge {
+  return {
+    id: row.id,
+    sport: row.sports?.slug ?? getSportConfigById(row.sport_id)?.slug ?? DEFAULT_LAUNCH_SPORT,
+    challengerProfileId: row.challenger_profile_id,
+    opponentProfileId: row.opponent_profile_id ?? undefined,
+    scheduledAt: row.scheduled_at,
+    locationName: row.location_name,
+    challengeType: row.challenge_type,
+    stakeType: row.stake_type ?? DEFAULT_STAKE_TYPE,
+    stakeLabel: row.stake_label ?? DEFAULT_STAKE_LABEL,
+    stakeNote: row.stake_note ?? undefined,
+    status: row.status,
+    createdAt: row.created_at,
+    isOpen: row.is_open
+  };
+}
 
 function getRealtimeChallengeRow(
   payload: RealtimePostgresChangesPayload<Record<string, unknown>>
@@ -456,11 +493,11 @@ export async function createChallenge(input: CreateChallengeInput): Promise<Chal
         throw new Error(payload?.error ?? `Open challenge creation failed with status ${response.status}`);
       }
 
-      if (!payload?.challengeId) {
-        throw new Error("Open challenge was created but no challenge id was returned.");
+      if (!payload?.challenge) {
+        throw new Error("Open challenge was created but no challenge data was returned.");
       }
 
-      return await getChallengeById(payload.challengeId);
+      return mapCreateOpenChallengeResponse(payload.challenge);
     }
 
     const payload: ChallengeInsert = {
