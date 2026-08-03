@@ -330,6 +330,9 @@ export function OnboardingScreen() {
           onChangeText={setRadius}
           placeholder="10"
         />
+        <Text style={styles.radiusHelperText}>
+          Challenge boards show challenges from players within this radius. You can always challenge players outside this area directly.
+        </Text>
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -365,6 +368,12 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     marginBottom: 14,
     maxWidth: 320
+  },
+  radiusHelperText: {
+    color: colors.textMuted,
+    fontSize: typography.caption,
+    lineHeight: 18,
+    marginTop: spacing.xs
   },
   wrap: {
     flexDirection: "row",

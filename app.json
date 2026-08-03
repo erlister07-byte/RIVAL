@@ -27,7 +27,14 @@
     "plugins": [
       "expo-asset",
       "./plugins/ios/withFmtFix",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow RIVAL to access your photos so you can choose a profile picture.",
+          "cameraPermission": "Allow RIVAL to use your camera so you can take a profile picture."
+        }
+      ]
     ]
   }
 }

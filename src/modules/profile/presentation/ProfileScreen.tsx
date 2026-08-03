@@ -188,42 +188,10 @@ export function ProfileScreen({ navigation }: Props) {
     setCopyMessage("Username copied");
   }
 
-  async function handlePickAvatar() {
-    if (!currentUser?.id || uploadingAvatar) {
-      console.log("[ProfileScreen] avatar picker blocked", {
-        hasProfileId: Boolean(currentUser?.id),
-        profileId: currentUser?.id,
-        uploadingAvatar
-      });
-      debugLog("[ProfileScreen] avatar picker blocked", {
-        hasProfileId: Boolean(currentUser?.id),
-        uploadingAvatar
-      });
+  async function uploadAvatarResult(result: ImagePicker.ImagePickerResult) {
+    if (!currentUser?.id) {
       return;
     }
-
-    console.log("[ProfileScreen] avatar picker open", {
-      profileId: currentUser.id
-    });
-    debugLog("[ProfileScreen] requesting avatar picker permission", {
-      profileId: currentUser.id
-    });
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-    if (!permission.granted) {
-      debugLog("[ProfileScreen] avatar picker permission denied", {
-        profileId: currentUser.id
-      });
-      setAvatarMessage("Photo access is needed to upload an avatar.");
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.75
-    });
 
     if (result.canceled || !result.assets[0]) {
       console.log("[ProfileScreen] avatar picker result", {
@@ -325,6 +293,71 @@ export function ProfileScreen({ navigation }: Props) {
     } finally {
       setUploadingAvatar(false);
     }
+  }
+
+  async function handleChooseAvatarFromLibrary() {
+    if (!currentUser?.id || uploadingAvatar) {
+      return;
+    }
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      setAvatarMessage("Photo access is needed to choose a profile photo.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.75
+    });
+
+    await uploadAvatarResult(result);
+  }
+
+  async function handleTakeAvatarPhoto() {
+    if (!currentUser?.id || uploadingAvatar) {
+      return;
+    }
+
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+
+    if (!permission.granted) {
+      setAvatarMessage("Camera access is needed to take a profile photo.");
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.75
+    });
+
+    await uploadAvatarResult(result);
+  }
+
+  function handlePickAvatar() {
+    if (!currentUser?.id || uploadingAvatar) {
+      return;
+    }
+
+    Alert.alert("Profile Photo", "Choose how you want to add your photo.", [
+      {
+        text: "Take Photo",
+        onPress: () => void handleTakeAvatarPhoto()
+      },
+      {
+        text: "Choose from Library",
+        onPress: () => void handleChooseAvatarFromLibrary()
+      },
+      {
+        text: "Cancel",
+        style: "cancel"
+      }
+    ]);
   }
 
   return (

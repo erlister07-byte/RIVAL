@@ -1,3 +1,5 @@
+import { Platform } from "react-native";
+
 import { firebaseAuth } from "@/services/firebase";
 import { AVATAR_BUCKET, createAvatarVersion, getAvatarPublicUrl, getAvatarStoragePath } from "@/shared/lib/avatar";
 import { debugError, debugLog, getSafeErrorPayload } from "@/shared/lib/logger";
@@ -50,25 +52,39 @@ export async function uploadProfilePhoto({
       profileId,
       storagePath
     });
-    const response = await fetch(imageUri);
-
-    if (!response.ok) {
-      throw new Error(`Failed to read selected image. Response status: ${response.status}`);
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const contentType = mimeType ?? response.headers.get("content-type") ?? "image/jpeg";
-    const avatarFile = new File([arrayBuffer], "avatar", { type: contentType });
     const formData = new FormData();
+    const contentType = mimeType ?? "image/jpeg";
 
     formData.append("profileId", profileId);
-    formData.append("file", avatarFile);
+
+    if (Platform.OS === "web") {
+      const response = await fetch(imageUri);
+
+      if (!response.ok) {
+        throw new Error(`Failed to read selected image. Response status: ${response.status}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const avatarFile = new File([arrayBuffer], "avatar", { type: contentType });
+      formData.append("file", avatarFile);
+    } else {
+      const extension = contentType.split("/")[1]?.split("+")[0] || "jpg";
+
+      formData.append(
+        "file",
+        {
+          uri: imageUri,
+          name: `avatar.${extension}`,
+          type: contentType
+        } as unknown as Blob
+      );
+    }
 
     console.log("[profilePhotoService] file conversion success", {
       bucket: AVATAR_BUCKET,
       profileId,
       storagePath,
-      byteLength: arrayBuffer.byteLength,
+      platform: Platform.OS,
       contentType
     });
 
