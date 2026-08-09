@@ -38,7 +38,7 @@ import {
 import { NearbyPlayer, getNearbyPlayers } from "@/services/playerService";
 import {
   createUserProfile,
-  getUserProfile,
+  getCurrentUserProfile,
   getRecentMatches,
   getProfileStats,
   updateUserProfile
@@ -240,7 +240,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         debugLog("[AppProvider] profile loading started", {
           firebaseUid: nextAuthUser.uid
         });
-        const profile = await getUserProfile({ firebaseUid: nextAuthUser.uid });
+        const profile = await getCurrentUserProfile();
 
         debugLog("[AppProvider] profile lookup completed", {
           firebaseUid: nextAuthUser.uid,

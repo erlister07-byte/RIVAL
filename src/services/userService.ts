@@ -86,6 +86,11 @@ type FriendSearchRow = {
   play_style_tags?: string[] | null;
 };
 
+type FriendSearchResponse = {
+  error?: string;
+  profiles?: FriendSearchRow[];
+};
+
 export type FriendSearchResult = {
   id: string;
   username: string;
@@ -127,19 +132,6 @@ function getProfileSelect(includeAvailabilityStatus = true, includePlayStyleTags
         sports (id, slug, name)
       ),
       profile_stats (profile_id, wins, losses, matches_played)
-    `;
-}
-
-function getFriendSearchSelect(includeAvailabilityStatus = true, includePlayStyleTags = true) {
-  return `
-      id,
-      username,
-      display_name,
-      vancouver_area,
-      ${includeAvailabilityStatus ? "availability_status," : ""}
-      ${includePlayStyleTags ? "play_style_tags," : ""}
-      profile_stats(matches_played),
-      profile_sports(skill_level, is_active, sports(slug))
     `;
 }
 
@@ -250,6 +242,41 @@ export async function createUserProfile(input: CreateUserProfileInput): Promise<
   }
 
   return mapProfile(payload.profile);
+}
+
+export async function getCurrentUserProfile(): Promise<Profile | null> {
+  const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const currentFirebaseUser = firebaseAuth.currentUser;
+
+  if (!supabaseProjectUrl) {
+    throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
+  }
+
+  if (!supabaseAnonKey) {
+    throw new Error("Missing EXPO_PUBLIC_SUPABASE_ANON_KEY");
+  }
+
+  if (!currentFirebaseUser) {
+    return null;
+  }
+
+  const firebaseIdToken = await currentFirebaseUser.getIdToken();
+  const functionUrl = `${supabaseProjectUrl}/functions/v1/upsert-profile`;
+  const response = await fetch(functionUrl, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${firebaseIdToken}`,
+      apikey: supabaseAnonKey
+    }
+  });
+  const payload = (await response.json().catch(() => null)) as UpsertProfileResponse | null;
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `Profile lookup failed with status ${response.status}`);
+  }
+
+  return payload?.profile ? mapProfile(payload.profile) : null;
 }
 
 export async function getUserProfile({
@@ -390,41 +417,40 @@ export async function searchProfilesByUsername(
     return [];
   }
 
-  const searchFilter = `username.ilike.%${normalizedQuery}%,display_name.ilike.%${normalizedQuery}%`;
-
   debugLog("[userService] searching profiles", {
     currentProfileId,
     query: normalizedQuery
   });
 
-  let { data, error } = await supabase
-    .from("profiles")
-    .select(getFriendSearchSelect(true))
-    .eq("onboarding_completed", true)
-    .neq("id", currentProfileId)
-    .or(searchFilter)
-    .order("username", { ascending: true })
-    .limit(20);
+  const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const currentFirebaseUser = firebaseAuth.currentUser;
 
-  if (error && (isMissingAvailabilityColumnError(error) || isMissingPlayStyleTagsColumnError(error))) {
-    debugLog("[userService] friend search fallback without optional profile fields", {
-      currentProfileId
-    });
-    ({ data, error } = await supabase
-      .from("profiles")
-      .select(getFriendSearchSelect(!isMissingAvailabilityColumnError(error), !isMissingPlayStyleTagsColumnError(error)))
-      .eq("onboarding_completed", true)
-      .neq("id", currentProfileId)
-      .or(searchFilter)
-      .order("username", { ascending: true })
-      .limit(20));
+  if (!supabaseProjectUrl || !supabaseAnonKey) {
+    throw new Error("Supabase is not configured.");
   }
 
-  if (error) {
-    throw error;
+  if (!currentFirebaseUser) {
+    throw new Error("You must be signed in to search for players.");
   }
 
-  const rows = ((data ?? []) as unknown) as FriendSearchRow[];
+  const firebaseIdToken = await currentFirebaseUser.getIdToken();
+  const functionUrl = new URL(`${supabaseProjectUrl}/functions/v1/search-profiles`);
+  functionUrl.searchParams.set("query", normalizedQuery);
+  const response = await fetch(functionUrl.toString(), {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${firebaseIdToken}`,
+      apikey: supabaseAnonKey
+    }
+  });
+  const payload = (await response.json().catch(() => null)) as FriendSearchResponse | null;
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `Player search failed with status ${response.status}`);
+  }
+
+  const rows = payload?.profiles ?? [];
   const results = rows.map((row) => {
     const activeSport = Array.isArray(row.profile_sports)
       ? row.profile_sports.find((item) => item.is_active && item.sports?.slug)

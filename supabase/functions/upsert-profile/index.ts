@@ -4,7 +4,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "npm:jose@5";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS"
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
 };
 
 const firebaseProjectId = Deno.env.get("FIREBASE_PROJECT_ID");
@@ -133,15 +133,37 @@ Deno.serve(async (request) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  if (request.method !== "POST") {
+  if (request.method !== "GET" && request.method !== "POST") {
     return jsonResponse(405, { error: "Method not allowed" });
   }
 
   try {
     const payload = await verifyFirebaseToken(request.headers.get("Authorization"));
     const firebaseUid = getFirebaseUid(payload);
-    const requestBody = (await request.json().catch(() => ({}))) as UpsertProfileRequest;
     const supabaseAdmin = createSupabaseAdmin();
+
+    if (request.method === "GET") {
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select(getProfileSelect())
+        .eq("firebase_uid", firebaseUid)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error("[upsert-profile] profile lookup failed", {
+          firebaseUid,
+          error: profileError
+        });
+        return jsonResponse(500, { error: profileError.message });
+      }
+
+      return jsonResponse(200, {
+        success: true,
+        profile
+      });
+    }
+
+    const requestBody = (await request.json().catch(() => ({}))) as UpsertProfileRequest;
 
     const displayName = sanitizeString(requestBody.displayName);
     const vancouverArea = sanitizeString(requestBody.vancouverArea);

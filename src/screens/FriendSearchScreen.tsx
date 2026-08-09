@@ -1,16 +1,15 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
-import { FlatList, StyleSheet, View } from "react-native";
+import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
 
 import { AppStackParamList } from "@/application/navigation/types";
-import { spacing } from "@/application/theme";
+import { colors, spacing } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
 import { DEFAULT_LAUNCH_SPORT, getSportIdBySlug } from "@/config/sports";
 import { FriendSearchResult, searchProfilesByUsername } from "@/services/userService";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { Input } from "@/shared/components/Input";
 import { PlayerListItem } from "@/shared/components/PlayerListItem";
-import { PlayerListSkeleton } from "@/shared/components/PlayerListSkeleton";
 import { Screen } from "@/shared/components/Screen";
 
 type Props = NativeStackScreenProps<AppStackParamList, "FriendSearch">;
@@ -31,35 +30,47 @@ export function FriendSearchScreen({ navigation }: Props) {
     const normalizedQuery = query.trim();
 
     if (normalizedQuery.length < 2) {
+      setLoading(false);
       setError("");
       setResults([]);
       setHasSearched(false);
       return undefined;
     }
 
+    let isActive = true;
+    setLoading(true);
+    setError("");
+    setHasSearched(true);
+
     const timeoutId = setTimeout(() => {
       void (async () => {
-        setLoading(true);
-        setError("");
-        setHasSearched(true);
-
         try {
           const nextResults = await searchProfilesByUsername(currentUser.id, normalizedQuery);
-          setResults(nextResults);
+
+          if (isActive) {
+            setResults(nextResults);
+          }
         } catch (searchError) {
-          setResults([]);
-          setError(
-            searchError instanceof Error && searchError.message
-              ? searchError.message
-              : "Unable to search players right now."
-          );
+          if (isActive) {
+            setResults([]);
+            setError(
+              searchError instanceof Error && searchError.message
+                ? searchError.message
+                : "Unable to search players right now."
+            );
+          }
         } finally {
-          setLoading(false);
+          if (isActive) {
+            setLoading(false);
+          }
         }
       })();
     }, 300);
 
-    return () => clearTimeout(timeoutId);
+    return () => {
+      isActive = false;
+      clearTimeout(timeoutId);
+    };
   }, [currentUser?.id, query]);
 
   function renderItem({ item }: { item: FriendSearchResult }) {
@@ -101,7 +112,10 @@ export function FriendSearchScreen({ navigation }: Props) {
         />
 
         {loading ? (
-          <PlayerListSkeleton count={2} />
+          <View style={styles.stateContainer}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={styles.stateText}>Searching players...</Text>
+          </View>
         ) : !hasSearched ? (
           <EmptyState
             title="Challenge a friend by username"
@@ -134,5 +148,14 @@ const styles = StyleSheet.create({
   listContent: {
     gap: spacing.md,
     paddingBottom: spacing.xl
+  },
+  stateContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.xxl
+  },
+  stateText: {
+    color: colors.textMuted
   }
 });

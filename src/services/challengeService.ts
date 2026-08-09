@@ -6,10 +6,10 @@ import { debugError, debugLog } from "@/shared/lib/logger";
 import { toServiceError } from "@/shared/lib/serviceError";
 
 import { createActivityEvent } from "./activityService";
+import { firebaseAuth } from "./firebase";
 import { supabase } from "./supabaseClient";
 
 type ChallengeRow = Database["public"]["Tables"]["challenges"]["Row"];
-type ChallengeInsert = Database["public"]["Tables"]["challenges"]["Insert"];
 type ChallengeUpdate = Database["public"]["Tables"]["challenges"]["Update"];
 type ChallengeStatus = Database["public"]["Enums"]["challenge_status"];
 type SportRow = Database["public"]["Tables"]["sports"]["Row"];
@@ -40,6 +40,11 @@ export type ChallengeInboxItem = Challenge & {
 
 type ChallengeRowWithSport = ChallengeRow & {
   sports: SportRow | null;
+};
+
+type CreateChallengeResponse = {
+  error?: string;
+  challenge?: ChallengeRowWithSport;
 };
 
 type OpenChallengeRow = {
@@ -405,36 +410,51 @@ export async function createChallenge(input: CreateChallengeInput): Promise<Chal
       throw new Error("Select an opponent first.");
     }
 
-    const payload: ChallengeInsert = {
-      sport_id: input.sportId,
-      challenger_profile_id: input.challengerProfileId,
-      opponent_profile_id: input.isOpen ? null : input.opponentProfileId,
-      scheduled_at: input.scheduledAt,
-      location_name: input.locationName,
-      location_latitude: input.locationLatitude ?? null,
-      location_longitude: input.locationLongitude ?? null,
-      challenge_type: input.challengeType,
-      stake_type: input.stakeType ?? DEFAULT_STAKE_TYPE,
-      stake_label: input.stakeLabel ?? DEFAULT_STAKE_LABEL,
-      stake_note: input.stakeNote ?? null,
-      is_open: input.isOpen ?? false
-    };
+    const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    const currentFirebaseUser = firebaseAuth.currentUser;
 
-    const { data, error } = await supabase
-      .from("challenges")
-      .insert(payload)
-      .select("*, sports(*)")
-      .single();
-
-    if (error) {
-      throw error;
+    if (!supabaseProjectUrl || !supabaseAnonKey) {
+      throw new Error("Supabase is not configured.");
     }
 
-    if (!data) {
+    if (!currentFirebaseUser) {
+      throw new Error("You must be signed in to create a challenge.");
+    }
+
+    const firebaseIdToken = await currentFirebaseUser.getIdToken();
+    const response = await fetch(`${supabaseProjectUrl}/functions/v1/create-challenge`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${firebaseIdToken}`,
+        apikey: supabaseAnonKey,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        sportId: input.sportId,
+        opponentProfileId: input.opponentProfileId,
+        scheduledAt: input.scheduledAt,
+        locationName: input.locationName,
+        locationLatitude: input.locationLatitude,
+        locationLongitude: input.locationLongitude,
+        challengeType: input.challengeType,
+        stakeType: input.stakeType,
+        stakeLabel: input.stakeLabel,
+        stakeNote: input.stakeNote,
+        isOpen: input.isOpen ?? false
+      })
+    });
+    const responsePayload = (await response.json().catch(() => null)) as CreateChallengeResponse | null;
+
+    if (!response.ok) {
+      throw new Error(responsePayload?.error ?? `Challenge creation failed with status ${response.status}`);
+    }
+
+    if (!responsePayload?.challenge) {
       throw new Error("Challenge was created but no row was returned.");
     }
 
-    const challengeRow = data as ChallengeRowWithSport;
+    const challengeRow = responsePayload.challenge;
 
     if (!input.isOpen && challengeRow.opponent_profile_id) {
       try {

@@ -6,3 +6,9 @@ verify_jwt = false
 
 [functions.upsert-profile]
 verify_jwt = false
+
+[functions.search-profiles]
+verify_jwt = false
+
+[functions.create-challenge]
+verify_jwt = false
