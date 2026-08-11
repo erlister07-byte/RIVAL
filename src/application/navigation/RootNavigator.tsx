@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Pressable, StyleSheet } from "react-native";
 import { Bell, Info, Mail } from "lucide-react-native";
 
+import { isLoopOneSandboxMode } from "@/application/config/runtimeConfig";
 import { colors } from "@/application/theme";
 import { BottomTabBar } from "@/components/ui/BottomTabBar";
 import { Header } from "@/components/ui/Header";
@@ -11,7 +12,10 @@ import { SignUpScreen } from "@/modules/auth/presentation/SignUpScreen";
 import { WelcomeScreen } from "@/modules/auth/presentation/WelcomeScreen";
 import { CreateChallengeScreen } from "@/modules/challenges/presentation/CreateChallengeScreen";
 import { ChallengeInboxScreen } from "@/modules/challenges/presentation/ChallengeInboxScreen";
-import { NearbyPlayersScreen } from "@/modules/discovery/presentation/NearbyPlayersScreen";
+import {
+  FullNearbyPlayersScreen,
+  LoopOneNearbyPlayersScreen
+} from "@/modules/discovery/presentation/NearbyPlayersScreen";
 import { HomeScreen } from "@/modules/home/presentation/HomeScreen";
 import { OnboardingScreen } from "@/modules/onboarding/presentation/OnboardingScreen";
 import { ProfileScreen } from "@/modules/profile/presentation/ProfileScreen";
@@ -27,6 +31,7 @@ import { MessagesScreen } from "@/screens/MessagesScreen";
 import {
   AppStackParamList,
   AuthStackParamList,
+  LoopOneStackParamList,
   MainTabParamList,
   OnboardingStackParamList
 } from "./types";
@@ -34,6 +39,7 @@ import { AuthGate } from "./AuthGate";
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const OnboardingStack = createNativeStackNavigator<OnboardingStackParamList>();
+const LoopOneStack = createNativeStackNavigator<LoopOneStackParamList>();
 const Tabs = createBottomTabNavigator<MainTabParamList>();
 const AppStack = createNativeStackNavigator<AppStackParamList>();
 
@@ -103,6 +109,19 @@ function OnboardingNavigator() {
   );
 }
 
+function LoopOneNavigator() {
+  return (
+    <LoopOneStack.Navigator
+      screenOptions={{
+        headerShadowVisible: false,
+        header: () => <Header title="Nearby Players" showBackButton={false} />
+      }}
+    >
+      <LoopOneStack.Screen name="NearbyPlayers" component={LoopOneNearbyPlayersScreen} />
+    </LoopOneStack.Navigator>
+  );
+}
+
 function AppNavigator() {
   return (
     <AppStack.Navigator
@@ -158,7 +177,7 @@ function AppNavigator() {
       />
       <AppStack.Screen
         name="NearbyPlayers"
-        component={NearbyPlayersScreen}
+        component={FullNearbyPlayersScreen}
         options={{ title: "Nearby Players" }}
       />
       <AppStack.Screen
@@ -205,7 +224,7 @@ export function RootNavigator() {
     <AuthGate
       signedOut={<AuthNavigator />}
       onboarding={<OnboardingNavigator />}
-      authenticated={<AppNavigator />}
+      authenticated={isLoopOneSandboxMode ? <LoopOneNavigator /> : <AppNavigator />}
     />
   );
 }

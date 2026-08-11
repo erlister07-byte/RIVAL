@@ -6,3 +6,9 @@ verify_jwt = false
 
 [functions.upsert-profile]
 verify_jwt = false
+
+[functions.get-current-profile]
+verify_jwt = false
+
+[functions.get-nearby-players]
+verify_jwt = false

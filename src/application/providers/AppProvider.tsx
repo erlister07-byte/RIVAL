@@ -21,6 +21,7 @@ import {
   SkillLevel,
   SportSlug
 } from "@/core/types/models";
+import { isLoopOneSandboxMode } from "@/application/config/runtimeConfig";
 import { getSportIdBySlug, isSportEnabled } from "@/config/sports";
 import {
   acceptChallenge as acceptChallengeRecord,
@@ -172,7 +173,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshHomeData = useCallback(async () => {
-    if (!currentUser?.id) {
+    if (isLoopOneSandboxMode || !currentUser?.id) {
       return;
     }
 
@@ -265,28 +266,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         setCurrentUser(profile);
 
-        try {
-          const [stats, recent] = await Promise.all([
-            getProfileStats(profile.id),
-            getRecentMatches(profile.id)
-          ]);
+        if (isLoopOneSandboxMode) {
+          setRecentMatches([]);
+        } else {
+          try {
+            const [stats, recent] = await Promise.all([
+              getProfileStats(profile.id),
+              getRecentMatches(profile.id)
+            ]);
 
-          setCurrentUser((previous) =>
-            previous?.id === profile.id
-              ? {
-                  ...previous,
-                  wins: stats.wins,
-                  losses: stats.losses,
-                  matchesPlayed: stats.matchesPlayed
-                }
-              : previous
-          );
-          setRecentMatches(recent);
-        } catch (secondaryError) {
-          debugError("Failed to load profile secondary data", secondaryError, {
-            firebaseUid: nextAuthUser.uid,
-            profileId: profile.id
-          });
+            setCurrentUser((previous) =>
+              previous?.id === profile.id
+                ? {
+                    ...previous,
+                    wins: stats.wins,
+                    losses: stats.losses,
+                    matchesPlayed: stats.matchesPlayed
+                  }
+                : previous
+            );
+            setRecentMatches(recent);
+          } catch (secondaryError) {
+            debugError("Failed to load profile secondary data", secondaryError, {
+              firebaseUid: nextAuthUser.uid,
+              profileId: profile.id
+            });
+          }
         }
       } catch (error) {
         debugError("Failed to load user profile", error);
@@ -305,6 +310,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let isActive = true;
 
     async function loadChallenges() {
+      if (isLoopOneSandboxMode) {
+        if (isActive) {
+          setChallenges([]);
+        }
+        return;
+      }
+
       if (!currentUser?.id) {
         if (isActive) {
           setChallenges([]);
@@ -338,6 +350,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let isActive = true;
 
     async function loadMatches() {
+      if (isLoopOneSandboxMode) {
+        if (isActive) {
+          setMatches([]);
+        }
+        return;
+      }
+
       if (!currentUser?.id) {
         if (isActive) {
           setMatches([]);
@@ -371,6 +390,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let isActive = true;
 
     async function loadNearbyPlayers() {
+      if (isLoopOneSandboxMode) {
+        if (isActive) {
+          setNearbyPlayers([]);
+        }
+        return;
+      }
+
       if (!currentUser?.id || !currentUser.onboardingCompleted) {
         if (isActive) {
           setNearbyPlayers([]);
@@ -485,6 +511,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
     } catch (error) {
       throw new Error(getErrorMessage(error, "Unable to update onboarding."));
+    }
+
+    if (isLoopOneSandboxMode) {
+      setCurrentUser(profile);
+      setRecentMatches([]);
+      return;
     }
 
     const stats = await getProfileStats(profile.id);

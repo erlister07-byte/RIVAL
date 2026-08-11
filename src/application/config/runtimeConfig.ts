@@ -12,6 +12,27 @@ const requiredFirebaseEnv = {
   EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
 };
 
+export type RivalAppMode = "FULL_APP" | "LOOP_01";
+
+const appModeByEnvironmentValue: Record<string, RivalAppMode> = {
+  "full-app": "FULL_APP",
+  "loop-01": "LOOP_01"
+};
+
+const configuredAppMode = process.env.EXPO_PUBLIC_RIVAL_APP_MODE?.trim().toLowerCase();
+
+export const rivalAppMode = configuredAppMode
+  ? appModeByEnvironmentValue[configuredAppMode] ?? "FULL_APP"
+  : "FULL_APP";
+
+if (configuredAppMode && !appModeByEnvironmentValue[configuredAppMode] && __DEV__) {
+  console.warn(
+    `[runtimeConfig] Invalid EXPO_PUBLIC_RIVAL_APP_MODE value "${configuredAppMode}". Falling back to FULL_APP.`
+  );
+}
+
+export const isLoopOneSandboxMode = rivalAppMode === "LOOP_01";
+
 export const missingSupabaseEnvVars = Object.entries(requiredSupabaseEnv)
   .filter(([, value]) => !value)
   .map(([key]) => key);
