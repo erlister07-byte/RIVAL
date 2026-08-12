@@ -12,3 +12,9 @@ verify_jwt = false
 
 [functions.get-nearby-players]
 verify_jwt = false
+
+[functions.create-direct-challenge]
+verify_jwt = false
+
+[functions.get-user-challenges]
+verify_jwt = false

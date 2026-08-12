@@ -21,7 +21,7 @@ import {
   SkillLevel,
   SportSlug
 } from "@/core/types/models";
-import { isLoopOneSandboxMode } from "@/application/config/runtimeConfig";
+import { isLoopOneSandboxMode, isLoopTwoSandboxMode } from "@/application/config/runtimeConfig";
 import { getSportIdBySlug, isSportEnabled } from "@/config/sports";
 import {
   acceptChallenge as acceptChallengeRecord,
@@ -173,7 +173,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshHomeData = useCallback(async () => {
-    if (isLoopOneSandboxMode || !currentUser?.id) {
+    if (isLoopOneSandboxMode || isLoopTwoSandboxMode || !currentUser?.id) {
       return;
     }
 
@@ -266,7 +266,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         setCurrentUser(profile);
 
-        if (isLoopOneSandboxMode) {
+        if (isLoopOneSandboxMode || isLoopTwoSandboxMode) {
           setRecentMatches([]);
         } else {
           try {
@@ -310,7 +310,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let isActive = true;
 
     async function loadChallenges() {
-      if (isLoopOneSandboxMode) {
+      if (isLoopOneSandboxMode || isLoopTwoSandboxMode) {
         if (isActive) {
           setChallenges([]);
         }
@@ -350,7 +350,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let isActive = true;
 
     async function loadMatches() {
-      if (isLoopOneSandboxMode) {
+      if (isLoopOneSandboxMode || isLoopTwoSandboxMode) {
         if (isActive) {
           setMatches([]);
         }
@@ -390,7 +390,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let isActive = true;
 
     async function loadNearbyPlayers() {
-      if (isLoopOneSandboxMode) {
+      if (isLoopOneSandboxMode || isLoopTwoSandboxMode) {
         if (isActive) {
           setNearbyPlayers([]);
         }

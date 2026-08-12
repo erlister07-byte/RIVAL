@@ -33,11 +33,82 @@ import { debugError, debugLog } from "@/shared/lib/logger";
 import { openBetaFeedbackEmail } from "@/shared/lib/betaFeedback";
 import { getDiagnosticErrorMessage, getUserSafeErrorMessage } from "@/shared/lib/serviceError";
 import { useTimedSuccess } from "@/shared/lib/useTimedSuccess";
+import { getLoopTwoChallenges, LoopTwoChallenge } from "@/services/challengeService";
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList, "ChallengeInbox">,
   NativeStackScreenProps<AppStackParamList>
 >;
+
+export function LoopTwoChallengeInboxScreen() {
+  const { currentUser, isHydratingProfile } = useAppState();
+  const [challenges, setChallenges] = useState<LoopTwoChallenge[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadChallenges() {
+      if (!currentUser?.id) {
+        if (isActive) {
+          setChallenges([]);
+          setLoading(false);
+        }
+        return;
+      }
+
+      setLoading(true);
+      setError("");
+      try {
+        const nextChallenges = await getLoopTwoChallenges();
+        if (isActive) {
+          setChallenges(nextChallenges.filter((challenge) => challenge.direction === "outgoing" && challenge.status === "pending"));
+        }
+      } catch (loadError) {
+        if (isActive) {
+          setChallenges([]);
+          setError(getUserSafeErrorMessage(loadError, "Unable to load pending challenges."));
+        }
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadChallenges();
+    return () => {
+      isActive = false;
+    };
+  }, [currentUser?.id, reloadKey]);
+
+  if (!currentUser?.id && isHydratingProfile) {
+    return <Screen><Card><Text style={styles.errorTitle}>Loading pending challenges</Text></Card></Screen>;
+  }
+
+  return (
+    <Screen>
+      <Card>
+        <Text style={styles.playerName}>Pending Challenges</Text>
+        <Text style={styles.meta}>Challenges you have sent are waiting for a future response phase.</Text>
+        {error ? <Text style={styles.errorTitle}>{error}</Text> : null}
+        <Button label="Refresh" tone="secondary" onPress={() => setReloadKey((value) => value + 1)} />
+      </Card>
+      {loading ? <ActivityIndicator color={colors.primary} /> : challenges.length === 0 ? (
+        <Card><EmptyState title="No pending challenges" description="Send a direct challenge from Nearby Players to see it here." /></Card>
+      ) : challenges.map((challenge) => (
+        <Card key={challenge.id}>
+          <Text style={styles.playerName}>{challenge.opponent.displayName}</Text>
+          <Text style={styles.meta}>{challenge.sport} · {getChallengeTypeLabel(challenge.challengeType)}</Text>
+          <Text style={styles.meta}>{challenge.locationName} · {formatDateTime(challenge.scheduledAt)}</Text>
+          <Badge label="Pending" tone="default" />
+        </Card>
+      ))}
+    </Screen>
+  );
+}
 
 export function ChallengeInboxScreen({ navigation }: Props) {
   const { currentUser, respondToChallenge, isHydratingProfile } = useAppState();

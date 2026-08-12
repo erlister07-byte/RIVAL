@@ -5,6 +5,7 @@ import { FlatList, StyleSheet, Text, View } from "react-native";
 import {
   AppStackParamList,
   LoopOneStackParamList,
+  LoopTwoStackParamList,
   NearbyPlayersRouteParams
 } from "@/application/navigation/types";
 import { colors, spacing, typography } from "@/application/theme";
@@ -31,11 +32,13 @@ import { getDiagnosticErrorMessage, getUserSafeErrorMessage } from "@/shared/lib
 
 type Props = NativeStackScreenProps<AppStackParamList, "NearbyPlayers">;
 type LoopOneProps = NativeStackScreenProps<LoopOneStackParamList, "NearbyPlayers">;
+type LoopTwoProps = NativeStackScreenProps<LoopTwoStackParamList, "NearbyPlayers">;
 
 type NearbyPlayersContentProps = {
   routeParams: NearbyPlayersRouteParams;
-  sandboxMode: boolean;
+  sandboxMode: "loop-01" | "loop-02" | null;
   onCreateChallenge?: (params: NonNullable<AppStackParamList["CreateChallenge"]>) => void;
+  onNavigateToPendingChallenges?: () => void;
   onNavigateToFriendSearch?: () => void;
   onOpenChallengeAccepted?: () => void;
 };
@@ -46,7 +49,7 @@ export function FullNearbyPlayersScreen({ navigation, route }: Props) {
   return (
     <NearbyPlayersContent
       routeParams={route.params}
-      sandboxMode={false}
+      sandboxMode={null}
       onCreateChallenge={(params) => navigation.navigate("CreateChallenge", params)}
       onNavigateToFriendSearch={() => navigation.navigate("FriendSearch")}
       onOpenChallengeAccepted={() =>
@@ -68,19 +71,31 @@ export function FullNearbyPlayersScreen({ navigation, route }: Props) {
 }
 
 export function LoopOneNearbyPlayersScreen({ route }: LoopOneProps) {
-  return <NearbyPlayersContent routeParams={route.params} sandboxMode />;
+  return <NearbyPlayersContent routeParams={route.params} sandboxMode="loop-01" />;
+}
+
+export function LoopTwoNearbyPlayersScreen({ navigation, route }: LoopTwoProps) {
+  return (
+    <NearbyPlayersContent
+      routeParams={route.params}
+      sandboxMode="loop-02"
+      onCreateChallenge={(params) => navigation.navigate("CreateChallenge", params)}
+      onNavigateToPendingChallenges={() => navigation.navigate("ChallengeInbox")}
+    />
+  );
 }
 
 function NearbyPlayersContent({
   routeParams,
   sandboxMode,
   onCreateChallenge,
+  onNavigateToPendingChallenges,
   onNavigateToFriendSearch,
   onOpenChallengeAccepted
 }: NearbyPlayersContentProps) {
   const { currentUser, isHydratingProfile } = useAppState();
   const enabledSports = getEnabledSportConfigs();
-  const isPlayNowMode = !sandboxMode && routeParams?.mode === "play_now";
+  const isPlayNowMode = sandboxMode === null && routeParams?.mode === "play_now";
   const [sport, setSport] = useState(routeParams?.sport ?? DEFAULT_LAUNCH_SPORT);
   const [timingContext, setTimingContext] = useState<AvailabilityStatus>(routeParams?.availability ?? "today");
   const [players, setPlayers] = useState<NearbyPlayer[]>([]);
@@ -305,6 +320,19 @@ function NearbyPlayersContent({
           </Text>
           <Text style={styles.meta}>{selectedPlayer.vancouverArea} · {selectedPlayer.distanceKm.toFixed(1)} km away</Text>
         </Card>
+        {sandboxMode === "loop-02" ? (
+          <Button
+            label="Challenge Player"
+            onPress={() =>
+              onCreateChallenge?.({
+                opponentId: selectedPlayer.id,
+                opponentUsername: selectedPlayer.username,
+                sport,
+                timingContext
+              })
+            }
+          />
+        ) : null}
         <Button label="Back to Nearby Players" tone="secondary" onPress={() => setSelectedPlayer(null)} />
       </Screen>
     );
@@ -346,6 +374,9 @@ function NearbyPlayersContent({
                 ))}
               </View>
             </View>
+          ) : null}
+          {sandboxMode === "loop-02" ? (
+            <Button label="Pending Challenges" tone="secondary" onPress={() => onNavigateToPendingChallenges?.()} />
           ) : null}
           {actionError ? <Text style={styles.inlineError}>{actionError}</Text> : null}
         </Card>

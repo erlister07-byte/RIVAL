@@ -22,6 +22,12 @@ export type LoopOneStackParamList = {
   NearbyPlayers: NearbyPlayersRouteParams;
 };
 
+export type LoopTwoStackParamList = {
+  NearbyPlayers: NearbyPlayersRouteParams;
+  CreateChallenge: NonNullable<AppStackParamList["CreateChallenge"]>;
+  ChallengeInbox: undefined;
+};
+
 export type MainTabParamList = {
   Home: undefined;
   ActivityFeed: undefined;
