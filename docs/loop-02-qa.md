@@ -1,4 +1,4 @@
-# Loop 2 Phase 1 QA Results
+# Loop 2 QA Results
 
 ## Scope
 
@@ -69,13 +69,63 @@ Both functions were deployed to `rgquxhkburgpzghwslbd` with `verify_jwt = false`
 
 Friend Search remains a full-app secondary path and is not reachable from the Loop 2 navigator. It was not secured or connected in this phase to avoid broadening the canonical Nearby Players flow; it is deferred and does not block Phase 1.
 
+## Phase 2 Scope
+
+Phase 2 adds direct-challenge responses only: Incoming Accept, Incoming Decline, and Outgoing Cancel. It does not add result submission, result confirmation, disputes, Open Challenge, or progression behavior.
+
+## Phase 2 Security Boundary
+
+Firebase ID tokens are verified internally and the caller profile is derived server-side. The client sends only challengeId and one supported action: accept, decline, or cancel. Accept and Decline require the recipient; Cancel requires the sender. Direct challenges only are accepted. The conditional update includes the authorized role and pending guard; malformed payloads return 400, wrong role 403, missing challenges 404, and terminal/race updates 409. The client provides no profile ID, Firebase UID, participant role, resulting status, or match ID.
+
+## Phase 2 Accept QA
+
+- **PASS:** Keither received Ryan's incoming Pending challenge with Accept and Decline visible and Cancel absent.
+- **PASS:** One Accept action produced the Challenge Accepted terminal state naming Ryan and stating that a match was created; result handling was not exposed.
+- **STATIC PASS:** the accepted transition relies on the existing accepted-challenge trigger; the trigger-owned insert uses the unique challenge link and conflict guard, with initial pending_submission status.
+- **INHERITED ACTIVITY:** the existing trigger may create one challenge_accepted event. Neither the client nor response function creates activity manually.
+- **LIMITED:** exact challenge, match, and activity-event rows were not inspected directly.
+
+## Phase 2 Decline QA
+
+- **PASS:** Keither received Ryan's incoming Pending challenge with Accept and Decline visible and Cancel absent.
+- **PASS:** One Decline action produced the Challenge Declined terminal state naming Ryan and stating that the challenge was no longer pending.
+- **STATIC PASS:** Decline changes pending to declined without a match, result, or progression path.
+- **PASS:** no challenge_declined activity event exists in the current activity schema or triggers.
+- **LIMITED:** the exact declined challenge row was not inspected directly.
+
+## Phase 2 Cancel QA
+
+- **PASS:** Ryan saw an outgoing Pending challenge to Keither with Cancel Challenge visible and Accept/Decline absent.
+- **PASS:** One Cancel action produced the Challenge Canceled terminal state naming Keither and stating that the challenge was no longer pending.
+- **STATIC PASS:** the canonical database status is canceled; the sender-only transition sets canceled_at and cannot create a match, result, or progression path.
+- **PASS:** no challenge_canceled activity event exists in the current activity schema or triggers.
+- **LIMITED:** the exact canceled challenge row was not inspected directly.
+
+## Match Trigger Regression
+
+- **PASS:** respond-to-challenge never inserts a match; it reads a match only after acceptance.
+- **PASS:** the existing accepted-challenge trigger remains the sole match-creation path and is guarded by accepted status.
+- **PASS:** Decline and Cancel cannot satisfy that accepted-only trigger. Result submission remains outside Loop 2 Phase 2.
+
+## QA Session Diagnostic
+
+- An apparent discovery discrepancy was caused by the QA browser being authenticated as Keither while it was believed to be Ryan.
+- Self-exclusion was correct; Ryan and Keither have distinct Firebase identity mappings.
+- Temporary discovery diagnostics were removed. get-nearby-players was restored exactly to Loop 1 baseline c9a9b65a and redeployed.
+- No product discovery fix was required.
+
+## Phase 2 Limitations
+
+- Direct row-level verification remains limited for exact challenge, match, result, and activity-event counts.
+- Concurrency protection is validated primarily by the atomic conditional update and schema/trigger reasoning; it was not independently runtime-raced.
+- No claim is made for unrun result lifecycle, Open Challenge, or progression tests.
+
 ## Loop 1 Regression
 
-**PASS:** In the separate Loop 1 sandbox, Nearby Players and the selected-player terminal state remained available, while Challenge Player and Pending Challenges were absent.
+**PASS (prior manual regression):** In the separate Loop 1 sandbox, Nearby Players and the selected-player terminal state remained available, while Challenge Player and Pending Challenges were absent. The final Phase 2 source review confirms those Loop 1-only conditions remain unchanged; no dedicated Loop 1 Expo process was available for a new runtime pass.
 
-## Deferred to Phase 2+
+## Deferred to Phase 3+
 
-- Accept, Decline, and Cancel
 - Match lifecycle
 - Result submission, confirmation, and disputes
 - Open Challenge and Quick Match
@@ -83,4 +133,4 @@ Friend Search remains a full-app secondary path and is not reachable from the Lo
 
 ## Overall Status
 
-The canonical Loop 2 Phase 1 flow is functionally verified through persisted sender Pending state. Direct database-row inspection, authenticated negative-response captures, database-level downstream-table inspection, server-concurrency duplicate behavior, and runtime Network/realtime capture remain explicitly limited.
+Loop 2 Phases 1 and 2 are functionally verified through persisted sender Pending state and direct-challenge Accept, Decline, and Cancel terminal paths. Direct database-row inspection, authenticated negative-response captures, database-level downstream-table inspection, server-concurrency race behavior, and runtime Network/realtime capture remain explicitly limited.

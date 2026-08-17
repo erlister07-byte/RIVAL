@@ -61,6 +61,16 @@ export type CreateDirectChallengeInput = {
   stakeNote?: string;
 };
 
+export type LoopTwoChallengeAction = "accept" | "decline" | "cancel";
+
+export type RespondToLoopTwoChallengeResult = {
+  challenge: LoopTwoChallenge;
+  match?: {
+    id: string;
+    resultStatus: "pending_submission";
+  };
+};
+
 async function invokeLoopTwoChallengeFunction<T>(functionName: string, body: Record<string, unknown> = {}): Promise<T> {
   const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -105,6 +115,16 @@ export async function createDirectChallenge(input: CreateDirectChallengeInput): 
 export async function getLoopTwoChallenges(): Promise<LoopTwoChallenge[]> {
   const response = await invokeLoopTwoChallengeFunction<{ challenges: LoopTwoChallenge[] }>("get-user-challenges");
   return response.challenges;
+}
+
+export async function respondToLoopTwoChallenge(
+  challengeId: string,
+  action: LoopTwoChallengeAction
+): Promise<RespondToLoopTwoChallengeResult> {
+  return invokeLoopTwoChallengeFunction<RespondToLoopTwoChallengeResult>("respond-to-challenge", {
+    challengeId,
+    action
+  });
 }
 
 export type ChallengeInboxItem = Challenge & {

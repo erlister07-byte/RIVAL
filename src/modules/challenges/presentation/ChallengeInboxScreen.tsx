@@ -33,7 +33,13 @@ import { debugError, debugLog } from "@/shared/lib/logger";
 import { openBetaFeedbackEmail } from "@/shared/lib/betaFeedback";
 import { getDiagnosticErrorMessage, getUserSafeErrorMessage } from "@/shared/lib/serviceError";
 import { useTimedSuccess } from "@/shared/lib/useTimedSuccess";
-import { getLoopTwoChallenges, LoopTwoChallenge } from "@/services/challengeService";
+import {
+  getLoopTwoChallenges,
+  LoopTwoChallenge,
+  LoopTwoChallengeAction,
+  RespondToLoopTwoChallengeResult,
+  respondToLoopTwoChallenge
+} from "@/services/challengeService";
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList, "ChallengeInbox">,
@@ -46,6 +52,11 @@ export function LoopTwoChallengeInboxScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [terminalResult, setTerminalResult] = useState<{
+    action: LoopTwoChallengeAction;
+    result: RespondToLoopTwoChallengeResult;
+  } | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -64,7 +75,7 @@ export function LoopTwoChallengeInboxScreen() {
       try {
         const nextChallenges = await getLoopTwoChallenges();
         if (isActive) {
-          setChallenges(nextChallenges.filter((challenge) => challenge.direction === "outgoing" && challenge.status === "pending"));
+          setChallenges(nextChallenges.filter((challenge) => challenge.status === "pending"));
         }
       } catch (loadError) {
         if (isActive) {
@@ -88,11 +99,54 @@ export function LoopTwoChallengeInboxScreen() {
     return <Screen><Card><Text style={styles.errorTitle}>Loading pending challenges</Text></Card></Screen>;
   }
 
+  async function handleAction(challenge: LoopTwoChallenge, action: LoopTwoChallengeAction) {
+    setBusyId(challenge.id);
+    setError("");
+
+    try {
+      const result = await respondToLoopTwoChallenge(challenge.id, action);
+      setChallenges((current) => current.filter((item) => item.id !== challenge.id));
+      setTerminalResult({ action, result });
+    } catch (actionError) {
+      setError(getUserSafeErrorMessage(actionError, "Unable to update this challenge."));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (terminalResult) {
+    const { action, result } = terminalResult;
+    const title = action === "accept" ? "Challenge Accepted" : action === "decline" ? "Challenge Declined" : "Challenge Canceled";
+    const description = action === "accept"
+      ? "Match created. Result handling is not part of this loop."
+      : action === "decline"
+        ? "This challenge is no longer pending."
+        : "This challenge is no longer pending.";
+
+    return (
+      <Screen>
+        <Card>
+          <Text style={styles.playerName}>{title}</Text>
+          <Text style={styles.meta}>{result.challenge.opponent.displayName}</Text>
+          <Text style={styles.meta}>{description}</Text>
+          <Button
+            label="Back to Pending Challenges"
+            tone="secondary"
+            onPress={() => {
+              setTerminalResult(null);
+              setReloadKey((value) => value + 1);
+            }}
+          />
+        </Card>
+      </Screen>
+    );
+  }
+
   return (
     <Screen>
       <Card>
         <Text style={styles.playerName}>Pending Challenges</Text>
-        <Text style={styles.meta}>Challenges you have sent are waiting for a future response phase.</Text>
+        <Text style={styles.meta}>Respond to direct challenges without leaving this loop.</Text>
         {error ? <Text style={styles.errorTitle}>{error}</Text> : null}
         <Button label="Refresh" tone="secondary" onPress={() => setReloadKey((value) => value + 1)} />
       </Card>
@@ -104,6 +158,30 @@ export function LoopTwoChallengeInboxScreen() {
           <Text style={styles.meta}>{challenge.sport} · {getChallengeTypeLabel(challenge.challengeType)}</Text>
           <Text style={styles.meta}>{challenge.locationName} · {formatDateTime(challenge.scheduledAt)}</Text>
           <Badge label="Pending" tone="default" />
+          {challenge.direction === "incoming" ? (
+            <View style={styles.actions}>
+              <Button
+                label="Accept"
+                onPress={() => void handleAction(challenge, "accept")}
+                loading={busyId === challenge.id}
+              />
+              <Button
+                label="Decline"
+                tone="secondary"
+                onPress={() => void handleAction(challenge, "decline")}
+                disabled={busyId === challenge.id}
+              />
+            </View>
+          ) : (
+            <View style={styles.actions}>
+              <Button
+                label="Cancel Challenge"
+                tone="danger"
+                onPress={() => void handleAction(challenge, "cancel")}
+                loading={busyId === challenge.id}
+              />
+            </View>
+          )}
         </Card>
       ))}
     </Screen>
