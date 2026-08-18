@@ -6,6 +6,7 @@ import { debugError, debugLog, getSafeErrorPayload } from "@/shared/lib/logger";
 import { toServiceError } from "@/shared/lib/serviceError";
 
 import { createActivityEvent } from "./activityService";
+import { firebaseAuth } from "./firebase";
 import { applyMatchRatingUpdate } from "./ratingService";
 import { supabase } from "./supabaseClient";
 import { getRecentMatches as getUserRecentMatches, getProfileStats } from "./userService";
@@ -71,6 +72,95 @@ export type MatchForSubmission = Match & {
   challengerName: string;
   opponentName: string;
 };
+
+export type LoopTwoMatch = {
+  id: string;
+  challengeId: string;
+  sport: string;
+  scheduledAt: string | null;
+  locationName: string;
+  challenger: { profileId: string; displayName: string };
+  opponent: { profileId: string; displayName: string };
+  counterpart: { profileId: string; displayName: string };
+  callerIsChallenger: boolean;
+  resultStatus: "pending_submission" | "pending_confirmation";
+  winnerProfileId: string | null;
+  scoreSummary: string | null;
+  submittedAt: string | null;
+  waitingForOpponent: boolean;
+  waitingForCurrentUser: boolean;
+};
+
+type LoopTwoMatchFunctionResponse = {
+  error?: string;
+  matches?: LoopTwoMatch[];
+  match?: LoopTwoMatch;
+};
+
+async function invokeLoopTwoMatchFunction<T>(functionName: string, body: Record<string, unknown> = {}): Promise<T> {
+  const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const currentFirebaseUser = firebaseAuth.currentUser;
+
+  if (!supabaseProjectUrl || !supabaseAnonKey) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  if (!currentFirebaseUser) {
+    throw new Error("You must be signed in to manage matches.");
+  }
+
+  const firebaseIdToken = await currentFirebaseUser.getIdToken();
+  const response = await fetch(`${supabaseProjectUrl}/functions/v1/${functionName}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${firebaseIdToken}`,
+      apikey: supabaseAnonKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `Unable to complete match request (${response.status}).`);
+  }
+
+  if (!payload) {
+    throw new Error("Match service returned an empty response.");
+  }
+
+  return payload;
+}
+
+export async function getUserMatches(): Promise<LoopTwoMatch[]> {
+  const response = await invokeLoopTwoMatchFunction<LoopTwoMatchFunctionResponse>("get-user-matches");
+  return response.matches ?? [];
+}
+
+export async function getUserMatch(matchId: string): Promise<LoopTwoMatch> {
+  const response = await invokeLoopTwoMatchFunction<LoopTwoMatchFunctionResponse>("get-user-matches", { matchId });
+  if (!response.match) {
+    throw new Error("Match service returned no match.");
+  }
+
+  return response.match;
+}
+
+export async function submitLoopTwoMatchResult(input: {
+  matchId: string;
+  winnerProfileId: string;
+  scoreSummary?: string;
+}): Promise<{ id: string; resultStatus: "pending_confirmation"; submittedAt: string | null; waitingForOpponent: true }> {
+  const response = await invokeLoopTwoMatchFunction<{
+    match?: { id: string; resultStatus: "pending_confirmation"; submittedAt: string | null; waitingForOpponent: true };
+  }>("submit-match-result", input);
+  if (!response.match) {
+    throw new Error("Match service returned no submitted match.");
+  }
+
+  return response.match;
+}
 
 export function isActionableResultMatch(match: Match, profileId?: string) {
   if (!profileId) {

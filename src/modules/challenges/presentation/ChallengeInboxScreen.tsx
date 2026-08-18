@@ -5,7 +5,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, AppState, StyleSheet, Text, View } from "react-native";
 
-import { AppStackParamList, MainTabParamList } from "@/application/navigation/types";
+import { AppStackParamList, LoopTwoStackParamList, MainTabParamList } from "@/application/navigation/types";
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
 import { getChallengeTypeLabel, getStakeDisplay } from "@/core/types/models";
@@ -46,7 +46,7 @@ type Props = CompositeScreenProps<
   NativeStackScreenProps<AppStackParamList>
 >;
 
-export function LoopTwoChallengeInboxScreen() {
+export function LoopTwoChallengeInboxScreen({ navigation }: NativeStackScreenProps<LoopTwoStackParamList, "ChallengeInbox">) {
   const { currentUser, isHydratingProfile } = useAppState();
   const [challenges, setChallenges] = useState<LoopTwoChallenge[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,7 +118,7 @@ export function LoopTwoChallengeInboxScreen() {
     const { action, result } = terminalResult;
     const title = action === "accept" ? "Challenge Accepted" : action === "decline" ? "Challenge Declined" : "Challenge Canceled";
     const description = action === "accept"
-      ? "Match created. Result handling is not part of this loop."
+      ? "Match created. You can submit a result from Matches."
       : action === "decline"
         ? "This challenge is no longer pending."
         : "This challenge is no longer pending.";
@@ -129,6 +129,7 @@ export function LoopTwoChallengeInboxScreen() {
           <Text style={styles.playerName}>{title}</Text>
           <Text style={styles.meta}>{result.challenge.opponent.displayName}</Text>
           <Text style={styles.meta}>{description}</Text>
+          {action === "accept" ? <Button label="View Matches" onPress={() => navigation.navigate("MatchInbox")} /> : null}
           <Button
             label="Back to Pending Challenges"
             tone="secondary"

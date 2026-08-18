@@ -18,6 +18,8 @@ import {
   LoopTwoNearbyPlayersScreen
 } from "@/modules/discovery/presentation/NearbyPlayersScreen";
 import { HomeScreen } from "@/modules/home/presentation/HomeScreen";
+import { LoopTwoMatchInboxScreen } from "@/modules/matches/presentation/MatchInboxScreen";
+import { LoopTwoSubmitMatchResultScreen } from "@/modules/matches/presentation/SubmitMatchResultScreen";
 import { OnboardingScreen } from "@/modules/onboarding/presentation/OnboardingScreen";
 import { ProfileScreen } from "@/modules/profile/presentation/ProfileScreen";
 import { ConfirmResultScreen } from "@/modules/results/presentation/ConfirmResultScreen";
@@ -132,7 +134,7 @@ function LoopTwoNavigator() {
         headerShadowVisible: false,
         header: () => (
           <Header
-            title={route.name === "ChallengeInbox" ? "Pending Challenges" : route.name === "CreateChallenge" ? "Send Challenge" : "Nearby Players"}
+            title={route.name === "ChallengeInbox" ? "Pending Challenges" : route.name === "CreateChallenge" ? "Send Challenge" : route.name === "MatchInbox" ? "Matches" : route.name === "SubmitMatchResult" ? "Submit Result" : "Nearby Players"}
             onBackPress={navigation.canGoBack() ? () => navigation.goBack() : undefined}
             showBackButton={navigation.canGoBack()}
           />
@@ -142,6 +144,8 @@ function LoopTwoNavigator() {
       <LoopTwoStack.Screen name="NearbyPlayers" component={LoopTwoNearbyPlayersScreen} />
       <LoopTwoStack.Screen name="CreateChallenge" component={CreateChallengeScreen as never} />
       <LoopTwoStack.Screen name="ChallengeInbox" component={LoopTwoChallengeInboxScreen} />
+      <LoopTwoStack.Screen name="MatchInbox" component={LoopTwoMatchInboxScreen} />
+      <LoopTwoStack.Screen name="SubmitMatchResult" component={LoopTwoSubmitMatchResultScreen} />
     </LoopTwoStack.Navigator>
   );
 }

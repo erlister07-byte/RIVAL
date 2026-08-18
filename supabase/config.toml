@@ -21,3 +21,9 @@ verify_jwt = false
 
 [functions.respond-to-challenge]
 verify_jwt = false
+
+[functions.get-user-matches]
+verify_jwt = false
+
+[functions.submit-match-result]
+verify_jwt = false

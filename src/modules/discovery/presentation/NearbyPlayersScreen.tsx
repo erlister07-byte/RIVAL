@@ -39,6 +39,7 @@ type NearbyPlayersContentProps = {
   sandboxMode: "loop-01" | "loop-02" | null;
   onCreateChallenge?: (params: NonNullable<AppStackParamList["CreateChallenge"]>) => void;
   onNavigateToPendingChallenges?: () => void;
+  onNavigateToMatches?: () => void;
   onNavigateToFriendSearch?: () => void;
   onOpenChallengeAccepted?: () => void;
 };
@@ -81,6 +82,7 @@ export function LoopTwoNearbyPlayersScreen({ navigation, route }: LoopTwoProps) 
       sandboxMode="loop-02"
       onCreateChallenge={(params) => navigation.navigate("CreateChallenge", params)}
       onNavigateToPendingChallenges={() => navigation.navigate("ChallengeInbox")}
+      onNavigateToMatches={() => navigation.navigate("MatchInbox")}
     />
   );
 }
@@ -90,6 +92,7 @@ function NearbyPlayersContent({
   sandboxMode,
   onCreateChallenge,
   onNavigateToPendingChallenges,
+  onNavigateToMatches,
   onNavigateToFriendSearch,
   onOpenChallengeAccepted
 }: NearbyPlayersContentProps) {
@@ -376,7 +379,10 @@ function NearbyPlayersContent({
             </View>
           ) : null}
           {sandboxMode === "loop-02" ? (
-            <Button label="Pending Challenges" tone="secondary" onPress={() => onNavigateToPendingChallenges?.()} />
+            <View style={styles.loopTwoActions}>
+              <Button label="Pending Challenges" tone="secondary" onPress={() => onNavigateToPendingChallenges?.()} />
+              <Button label="Matches" tone="secondary" onPress={() => onNavigateToMatches?.()} />
+            </View>
           ) : null}
           {actionError ? <Text style={styles.inlineError}>{actionError}</Text> : null}
         </Card>
@@ -463,6 +469,9 @@ const styles = StyleSheet.create({
     lineHeight: 24
   },
   filterSection: {
+    gap: spacing.sm
+  },
+  loopTwoActions: {
     gap: spacing.sm
   },
   filterLabel: {
