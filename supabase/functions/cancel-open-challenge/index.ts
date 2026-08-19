@@ -21,15 +21,12 @@ Deno.serve(async (request) => {
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     if (!body || Object.keys(body).length !== 1 || typeof body.challengeId !== "string" || !body.challengeId) return jsonResponse(400, { error: "Invalid open challenge request" });
     const supabaseAdmin = admin();
-    const { data: caller, error: callerError } = await supabaseAdmin.from("profiles").select("id, onboarding_completed").eq("firebase_uid", firebaseUid).maybeSingle();
+    const { data: caller, error: callerError } = await supabaseAdmin.from("profiles").select("id").eq("firebase_uid", firebaseUid).maybeSingle();
     if (callerError) return jsonResponse(500, { error: "Unable to resolve current profile" });
     if (!caller) return jsonResponse(404, { error: "Profile not found for Firebase user" });
-    if (!caller.onboarding_completed) return jsonResponse(422, { error: "Complete onboarding before joining an open challenge" });
-    const { data: rows, error: updateError } = await supabaseAdmin.from("challenges").update({ opponent_profile_id: caller.id, status: "accepted", is_open: false, accepted_at: new Date().toISOString() }).eq("id", body.challengeId).eq("is_open", true).eq("status", "pending").is("opponent_profile_id", null).neq("challenger_profile_id", caller.id).select("id");
-    if (updateError) return jsonResponse(500, { error: "Unable to accept open challenge" });
-    if (!rows?.length) return jsonResponse(409, { error: "This open challenge is no longer available" });
-    const { data: match, error: matchError } = await supabaseAdmin.from("matches").select("id, result_status").eq("challenge_id", body.challengeId).maybeSingle();
-    if (matchError || !match) return jsonResponse(500, { error: "Accepted challenge did not create a match" });
-    return jsonResponse(200, { matchId: match.id, resultStatus: match.result_status });
-  } catch (error) { console.error("[accept-open-challenge] unexpected failure", { error }); return jsonResponse(500, { error: "Unable to accept open challenge" }); }
+    const { data: rows, error: cancelError } = await supabaseAdmin.from("challenges").update({ status: "canceled", canceled_at: new Date().toISOString() }).eq("id", body.challengeId).eq("challenger_profile_id", caller.id).eq("is_open", true).eq("status", "pending").is("opponent_profile_id", null).select("id");
+    if (cancelError) return jsonResponse(500, { error: "Unable to cancel open challenge" });
+    if (!rows?.length) return jsonResponse(409, { error: "This open challenge is no longer pending" });
+    return jsonResponse(200, { success: true });
+  } catch (error) { console.error("[cancel-open-challenge] unexpected failure", { error }); return jsonResponse(500, { error: "Unable to cancel open challenge" }); }
 });

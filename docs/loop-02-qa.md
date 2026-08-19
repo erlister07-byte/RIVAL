@@ -205,11 +205,21 @@ Firebase Auth → Firebase ID token → Firebase-authenticated Edge Function →
 - Confirmation and dispute states were verified through both participants' refreshed UI and deployed function responses; direct SQL inspection of every resulting row, profile-stat recount, and trigger-owned activity row was not performed during manual QA.
 - Destructive concurrency races and authenticated negative request bodies were not re-run for Phase 4; authorization and terminal guards are supported by deployed privilege verification and source review.
 
+## Loop 2B Open Challenge Phase 1
+
+- **Security boundary — PASS:** create, list, accept, and cancel use Firebase-authenticated Edge Functions with internally verified Firebase tokens and server-derived caller profiles. The browser supplies no trusted profile, Firebase UID, or lifecycle state.
+- **Creation — MANUAL RUNTIME PASS:** Keither posted a fresh Pickleball Open Challenge for Aug 20 at 6:30 p.m. at Kits Beach Courts with Bragging Rights through Nearby Players → Open Challenges → Post Open Challenge. It appeared under Your Open Challenge with creator-only Cancel Open Challenge control.
+- **Discovery and acceptance — MANUAL RUNTIME PASS:** a second account discovered the fixture as another player's Open Challenge and joined once. The challenge closed and both participants saw exactly one Aug 20 canonical Match Inbox entry in pending_submission / Ready for a result state.
+- **Loop 2A handoff — MANUAL RUNTIME PASS:** the accepted Open Challenge entered the existing Match Inbox lifecycle; no parallel Open Challenge result path was exposed. Existing Aug 12 pending_submission, Aug 18 confirmed, and Aug 19 disputed fixtures remained intact.
+- **Cancellation — MANUAL RUNTIME PASS:** the creator posted and canceled a separate fresh Open Challenge. It disappeared for both accounts and created no match.
+- **Direct-challenge smoke regression — BLOCKED / NOT EXECUTED:** no eligible nearby player was available under the existing UI filters. No QA data was changed to manufacture this optional regression fixture; this is not evidence of a direct-challenge failure.
+- **Negative cases — LIMITED:** creator-side Cancel Open Challenge was observed. Self-acceptance, non-owner cancellation, and a destructive duplicate-acceptance race were not independently issued. One acceptance produced one match and removed the Open Challenge from discovery.
+- **Excluded behavior — PASS:** no result was submitted for the Aug 20 match. No progression, realtime, notification, auto-confirm, dispute-resolution, or parallel result UI was exposed.
+
 ## Deferred to Phase 4+
 
-- Open Challenge and Quick Match
 - XP, ratings/ELO, badges, streaks, leaderboards, rivalries, and rematches
 
 ## Overall Status
 
-Loop 2 Phases 1 through 4 are functionally verified through persisted sender Pending state, direct-challenge Accept/Decline/Cancel paths, accepted-match retrieval, participant-scoped result submission, opponent-only confirmation/dispute, and terminal confirmed/disputed views for both participants. Direct database-row inspection, authenticated negative-response captures, database-level downstream-table inspection, server-concurrency race behavior, and broader runtime Network/realtime capture remain explicitly limited.
+Loop 2 Phases 1 through 4 and Loop 2B Open Challenge Phase 1 are functionally verified through persisted sender Pending state, direct-challenge Accept/Decline/Cancel paths, authenticated Open Challenge creation/discovery/acceptance/cancellation, accepted-match retrieval, participant-scoped result submission, opponent-only confirmation/dispute, and terminal confirmed/disputed views for both participants. Direct database-row inspection, authenticated negative-response captures, database-level downstream-table inspection, server-concurrency race behavior, broader runtime Network/realtime capture, and the optional direct-challenge smoke regression remain explicitly limited.

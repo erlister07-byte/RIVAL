@@ -26,7 +26,7 @@ import {
   getStakeDisplay
 } from "@/core/types/models";
 import { getUserProfile } from "@/services/userService";
-import { createDirectChallenge } from "@/services/challengeService";
+import { createDirectChallenge, createLoopTwoOpenChallenge } from "@/services/challengeService";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
 import { Chip } from "@/shared/components/Chip";
@@ -171,7 +171,7 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
   const { currentUser, nearbyPlayers, createChallenge } = useAppState();
   const isFocused = useIsFocused();
   const isRematch = route.params?.isRematch ?? false;
-  const challengeMode = isLoopTwoSandboxMode ? "direct" : route.params?.mode ?? "direct";
+  const challengeMode = isLoopTwoSandboxMode && route.params?.mode !== "open" ? "direct" : route.params?.mode ?? "direct";
   const isOpenChallengeMode = challengeMode === "open";
   const isOpponentPrefilled = Boolean(route.params?.opponentId);
   const [sport, setSport] = useState<SportSlug>(getInitialSport(route.params));
@@ -459,7 +459,17 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
         challengeMode
       });
 
-      if (isLoopTwoSandboxMode) {
+      if (isLoopTwoSandboxMode && isOpenChallengeMode) {
+        await createLoopTwoOpenChallenge({
+          sport,
+          scheduledAt: scheduledAt.toISOString(),
+          locationName: normalizedLocation,
+          challengeType,
+          stakeType: selectedStake.type,
+          stakeLabel: selectedStake.label,
+          stakeNote: normalizedStakeNote || undefined
+        });
+      } else if (isLoopTwoSandboxMode) {
         await createDirectChallenge({
           opponentProfileId: opponentId,
           sport,
@@ -497,7 +507,15 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
       });
       if (isLoopTwoSandboxMode) {
         resetTimeoutRef.current = setTimeout(() => {
-          (navigation as unknown as { replace: (routeName: string) => void }).replace("ChallengeInbox");
+          if (isOpenChallengeMode) {
+            (navigation as unknown as { replace: (routeName: string, params: object) => void }).replace("NearbyPlayers", {
+              sport,
+              availability: route.params?.timingContext ?? "today",
+              mode: "play_now"
+            });
+          } else {
+            (navigation as unknown as { replace: (routeName: string) => void }).replace("ChallengeInbox");
+          }
           resetTimeoutRef.current = null;
         }, 900);
         return;

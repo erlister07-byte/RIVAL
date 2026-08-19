@@ -18,7 +18,13 @@ import {
   getStakeDisplay,
   OpenChallenge
 } from "@/core/types/models";
-import { acceptOpenChallenge, getOpenChallenges } from "@/services/challengeService";
+import {
+  acceptLoopTwoOpenChallenge,
+  acceptOpenChallenge,
+  cancelLoopTwoOpenChallenge,
+  getLoopTwoOpenChallenges,
+  getOpenChallenges
+} from "@/services/challengeService";
 import { NearbyPlayer, getLoopOneNearbyPlayers, getNearbyPlayers } from "@/services/playerService";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
@@ -40,6 +46,7 @@ type NearbyPlayersContentProps = {
   onCreateChallenge?: (params: NonNullable<AppStackParamList["CreateChallenge"]>) => void;
   onNavigateToPendingChallenges?: () => void;
   onNavigateToMatches?: () => void;
+  onNavigateToOpenChallenges?: () => void;
   onNavigateToFriendSearch?: () => void;
   onOpenChallengeAccepted?: () => void;
 };
@@ -83,6 +90,8 @@ export function LoopTwoNearbyPlayersScreen({ navigation, route }: LoopTwoProps) 
       onCreateChallenge={(params) => navigation.navigate("CreateChallenge", params)}
       onNavigateToPendingChallenges={() => navigation.navigate("ChallengeInbox")}
       onNavigateToMatches={() => navigation.navigate("MatchInbox")}
+      onNavigateToOpenChallenges={() => navigation.navigate("NearbyPlayers", { mode: "play_now" })}
+      onOpenChallengeAccepted={() => navigation.navigate("MatchInbox")}
     />
   );
 }
@@ -93,21 +102,24 @@ function NearbyPlayersContent({
   onCreateChallenge,
   onNavigateToPendingChallenges,
   onNavigateToMatches,
+  onNavigateToOpenChallenges,
   onNavigateToFriendSearch,
   onOpenChallengeAccepted
 }: NearbyPlayersContentProps) {
   const { currentUser, isHydratingProfile } = useAppState();
   const enabledSports = getEnabledSportConfigs();
-  const isPlayNowMode = sandboxMode === null && routeParams?.mode === "play_now";
+  const isPlayNowMode = routeParams?.mode === "play_now" && (sandboxMode === null || sandboxMode === "loop-02");
   const [sport, setSport] = useState(routeParams?.sport ?? DEFAULT_LAUNCH_SPORT);
   const [timingContext, setTimingContext] = useState<AvailabilityStatus>(routeParams?.availability ?? "today");
   const [players, setPlayers] = useState<NearbyPlayer[]>([]);
   const [openChallenges, setOpenChallenges] = useState<OpenChallenge[]>([]);
+  const [ownOpenChallenges, setOwnOpenChallenges] = useState<OpenChallenge[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const [joiningChallengeId, setJoiningChallengeId] = useState<string | null>(null);
+  const [cancelingChallengeId, setCancelingChallengeId] = useState<string | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<NearbyPlayer | null>(null);
 
   if (!currentUser?.id && isHydratingProfile) {
@@ -142,7 +154,10 @@ function NearbyPlayersContent({
 
       try {
         if (isPlayNowMode) {
-          const nextChallenges = await getOpenChallenges(
+          const loopTwoChallenges = sandboxMode === "loop-02"
+            ? await getLoopTwoOpenChallenges(sport)
+            : null;
+          const nextChallenges = loopTwoChallenges?.challenges ?? await getOpenChallenges(
             currentUser.id,
             getSportIdBySlug(sport),
             currentUser.vancouverArea
@@ -150,6 +165,7 @@ function NearbyPlayersContent({
 
           if (isActive) {
             setOpenChallenges(nextChallenges);
+            setOwnOpenChallenges(loopTwoChallenges?.ownChallenges ?? []);
             setPlayers([]);
           }
         } else {
@@ -164,12 +180,14 @@ function NearbyPlayersContent({
           if (isActive) {
             setPlayers(nextPlayers);
             setOpenChallenges([]);
+            setOwnOpenChallenges([]);
           }
         }
       } catch (loadError) {
         if (isActive) {
           setPlayers([]);
           setOpenChallenges([]);
+          setOwnOpenChallenges([]);
           setError(
             loadError instanceof Error && loadError.message
               ? loadError.message
@@ -236,13 +254,33 @@ function NearbyPlayersContent({
     setActionError("");
 
     try {
-      await acceptOpenChallenge(challenge.id, currentUser.id);
+      if (sandboxMode === "loop-02") {
+        await acceptLoopTwoOpenChallenge(challenge.id);
+      } else {
+        await acceptOpenChallenge(challenge.id, currentUser.id);
+      }
       setOpenChallenges((current) => current.filter((item) => item.id !== challenge.id));
       onOpenChallengeAccepted?.();
     } catch (joinError) {
       setActionError(getUserSafeErrorMessage(joinError, "Unable to join this challenge right now."));
     } finally {
       setJoiningChallengeId(null);
+    }
+  }
+
+  async function handleCancelOpenChallenge(challenge: OpenChallenge) {
+    if (sandboxMode !== "loop-02") return;
+
+    setCancelingChallengeId(challenge.id);
+    setActionError("");
+
+    try {
+      await cancelLoopTwoOpenChallenge(challenge.id);
+      setOwnOpenChallenges((current) => current.filter((item) => item.id !== challenge.id));
+    } catch (cancelError) {
+      setActionError(getUserSafeErrorMessage(cancelError, "Unable to cancel this open challenge right now."));
+    } finally {
+      setCancelingChallengeId(null);
     }
   }
 
@@ -302,6 +340,26 @@ function NearbyPlayersContent({
           onPress={() => void handleJoinOpenChallenge(item)}
           loading={joiningChallengeId === item.id}
           disabled={Boolean(joiningChallengeId && joiningChallengeId !== item.id)}
+        />
+      </Card>
+    );
+  }
+
+  function renderOwnOpenChallenge({ item }: { item: OpenChallenge }) {
+    return (
+      <Card>
+        <Text style={styles.playerName}>Your Open Challenge</Text>
+        <Text style={styles.meta}>
+          {item.sportName} · {getChallengeTypeLabel(item.challengeType)} · {getStakeDisplay(item.stakeType, item.stakeLabel)}
+        </Text>
+        <Text style={styles.meta}>{formatDateTime(item.scheduledAt)}</Text>
+        <Text style={styles.meta}>{item.locationName}</Text>
+        <Button
+          label="Cancel Open Challenge"
+          tone="secondary"
+          onPress={() => void handleCancelOpenChallenge(item)}
+          loading={cancelingChallengeId === item.id}
+          disabled={Boolean(cancelingChallengeId && cancelingChallengeId !== item.id)}
         />
       </Card>
     );
@@ -382,7 +440,11 @@ function NearbyPlayersContent({
             <View style={styles.loopTwoActions}>
               <Button label="Pending Challenges" tone="secondary" onPress={() => onNavigateToPendingChallenges?.()} />
               <Button label="Matches" tone="secondary" onPress={() => onNavigateToMatches?.()} />
+              <Button label="Open Challenges" tone="secondary" onPress={() => onNavigateToOpenChallenges?.()} />
             </View>
+          ) : null}
+          {sandboxMode === "loop-02" && isPlayNowMode ? (
+            <Button label="Post Open Challenge" onPress={() => onCreateChallenge?.({ mode: "open", sport })} />
           ) : null}
           {actionError ? <Text style={styles.inlineError}>{actionError}</Text> : null}
         </Card>
@@ -401,25 +463,20 @@ function NearbyPlayersContent({
             <Button label="Try Again" tone="secondary" onPress={() => setReloadKey((value) => value + 1)} />
           </Card>
         ) : isPlayNowMode ? (
-          openChallenges.length === 0 ? (
-            <Card>
-              <EmptyState title="No live games nearby yet" description={emptyDescription} />
-              <Button
-                label="Post Open Challenge"
-                onPress={() => {
-                  onCreateChallenge?.({ mode: "open", sport });
-                }}
-              />
-            </Card>
-          ) : (
-            <FlatList
-              data={openChallenges}
-              keyExtractor={(item) => item.id}
-              renderItem={renderOpenChallenge}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.listContent}
-            />
-          )
+          <FlatList
+            data={openChallenges}
+            keyExtractor={(item) => item.id}
+            renderItem={renderOpenChallenge}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            ListHeaderComponent={
+              <View style={styles.openChallengeHeader}>
+                {ownOpenChallenges.map((challenge) => renderOwnOpenChallenge({ item: challenge }))}
+                {openChallenges.length === 0 ? <Card><EmptyState title="No live games nearby yet" description={emptyDescription} /></Card> : null}
+                {sandboxMode === null ? <Button label="Post Open Challenge" onPress={() => onCreateChallenge?.({ mode: "open", sport })} /> : null}
+              </View>
+            }
+          />
         ) : players.length === 0 ? (
           <Card>
             <EmptyState title="No nearby players found" description={emptyDescription} />
@@ -489,6 +546,10 @@ const styles = StyleSheet.create({
   listContent: {
     gap: spacing.md,
     paddingBottom: spacing.xl
+  },
+  openChallengeHeader: {
+    gap: spacing.md,
+    marginBottom: spacing.md
   },
   stateText: {
     color: colors.textMuted,

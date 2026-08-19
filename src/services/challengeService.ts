@@ -61,6 +61,21 @@ export type CreateDirectChallengeInput = {
   stakeNote?: string;
 };
 
+export type CreateLoopTwoOpenChallengeInput = {
+  sport: Challenge["sport"];
+  scheduledAt: string;
+  locationName: string;
+  challengeType: Challenge["challengeType"];
+  stakeType?: string;
+  stakeLabel?: string;
+  stakeNote?: string;
+};
+
+type LoopTwoOpenChallengesResponse = {
+  challenges: OpenChallenge[];
+  ownChallenges: OpenChallenge[];
+};
+
 export type LoopTwoChallengeAction = "accept" | "decline" | "cancel";
 
 export type RespondToLoopTwoChallengeResult = {
@@ -110,6 +125,23 @@ async function invokeLoopTwoChallengeFunction<T>(functionName: string, body: Rec
 export async function createDirectChallenge(input: CreateDirectChallengeInput): Promise<LoopTwoChallenge> {
   const response = await invokeLoopTwoChallengeFunction<{ challenge: LoopTwoChallenge }>("create-direct-challenge", input);
   return response.challenge;
+}
+
+export async function createLoopTwoOpenChallenge(input: CreateLoopTwoOpenChallengeInput): Promise<OpenChallenge> {
+  const response = await invokeLoopTwoChallengeFunction<{ challenge: OpenChallenge }>("create-open-challenge", input);
+  return response.challenge;
+}
+
+export async function getLoopTwoOpenChallenges(sport: Challenge["sport"]): Promise<LoopTwoOpenChallengesResponse> {
+  return invokeLoopTwoChallengeFunction<LoopTwoOpenChallengesResponse>("get-open-challenges", { sport });
+}
+
+export async function acceptLoopTwoOpenChallenge(challengeId: string): Promise<{ matchId: string }> {
+  return invokeLoopTwoChallengeFunction<{ matchId: string }>("accept-open-challenge", { challengeId });
+}
+
+export async function cancelLoopTwoOpenChallenge(challengeId: string): Promise<void> {
+  await invokeLoopTwoChallengeFunction("cancel-open-challenge", { challengeId });
 }
 
 export async function getLoopTwoChallenges(): Promise<LoopTwoChallenge[]> {
