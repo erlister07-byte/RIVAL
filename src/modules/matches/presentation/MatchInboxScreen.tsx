@@ -5,7 +5,12 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { LoopTwoStackParamList } from "@/application/navigation/types";
 import { colors, spacing, typography } from "@/application/theme";
-import { getUserMatches, LoopTwoMatch } from "@/services/matchService";
+import {
+  confirmLoopTwoMatchResult,
+  getUserMatches,
+  LoopTwoMatch,
+  rejectLoopTwoMatchResult
+} from "@/services/matchService";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
 import { EmptyState } from "@/shared/components/EmptyState";
@@ -15,12 +20,19 @@ import { getUserSafeErrorMessage } from "@/shared/lib/serviceError";
 
 type Props = NativeStackScreenProps<LoopTwoStackParamList, "MatchInbox">;
 
+function getWinnerName(match: LoopTwoMatch) {
+  if (match.winnerProfileId === match.challenger.profileId) return match.challenger.displayName;
+  if (match.winnerProfileId === match.opponent.profileId) return match.opponent.displayName;
+  return "Not recorded";
+}
+
 export function LoopTwoMatchInboxScreen({ navigation }: Props) {
   const isFocused = useIsFocused();
   const [matches, setMatches] = useState<LoopTwoMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [actioningMatchId, setActioningMatchId] = useState("");
 
   useEffect(() => {
     if (!isFocused) return;
@@ -49,18 +61,45 @@ export function LoopTwoMatchInboxScreen({ navigation }: Props) {
     };
   }, [isFocused, reloadKey]);
 
+  async function handleResultAction(match: LoopTwoMatch, action: "confirm" | "dispute") {
+    setActioningMatchId(match.id);
+    setError("");
+
+    try {
+      const nextMatch = action === "confirm"
+        ? await confirmLoopTwoMatchResult(match.id)
+        : await rejectLoopTwoMatchResult(match.id);
+      setMatches((previous) => previous.map((item) => (
+        item.id === nextMatch.id
+          ? {
+              ...item,
+              resultStatus: nextMatch.resultStatus,
+              confirmedAt: nextMatch.confirmedAt ?? item.confirmedAt,
+              waitingForOpponent: false,
+              waitingForCurrentUser: false
+            }
+          : item
+      )));
+      setReloadKey((value) => value + 1);
+    } catch (actionError) {
+      setError(getUserSafeErrorMessage(actionError, `Unable to ${action} match result.`));
+    } finally {
+      setActioningMatchId("");
+    }
+  }
+
   return (
     <Screen>
       <Card>
         <Text style={styles.title}>Matches</Text>
-        <Text style={styles.meta}>Record a result or view its current waiting state.</Text>
+        <Text style={styles.meta}>Record, review, or view a match result.</Text>
         <Button label="Refresh" tone="secondary" onPress={() => setReloadKey((value) => value + 1)} />
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </Card>
 
       {loading ? <ActivityIndicator color={colors.primary} /> : null}
       {!loading && !error && matches.length === 0 ? (
-        <Card><EmptyState title="No active matches" description="Accepted matches that need a result will appear here." /></Card>
+        <Card><EmptyState title="No matches to review" description="Accepted matches and their result states will appear here." /></Card>
       ) : null}
       {!loading ? matches.map((match) => (
         <Card key={match.id}>
@@ -72,13 +111,43 @@ export function LoopTwoMatchInboxScreen({ navigation }: Props) {
               <Text style={styles.status}>Ready for a result</Text>
               <Button label="Submit Result" onPress={() => navigation.navigate("SubmitMatchResult", { matchId: match.id })} />
             </View>
+          ) : match.resultStatus === "confirmed" ? (
+            <View style={styles.actions}>
+              <Text style={styles.status}>Result Confirmed</Text>
+              <Text style={styles.meta}>Winner: {getWinnerName(match)}</Text>
+              {match.scoreSummary ? <Text style={styles.meta}>Score: {match.scoreSummary}</Text> : null}
+            </View>
+          ) : match.resultStatus === "disputed" ? (
+            <View style={styles.actions}>
+              <Text style={styles.status}>Result Disputed</Text>
+              <Text style={styles.meta}>The submitted result was disputed.</Text>
+              <Text style={styles.meta}>Winner: {getWinnerName(match)}</Text>
+              {match.scoreSummary ? <Text style={styles.meta}>Score: {match.scoreSummary}</Text> : null}
+            </View>
           ) : (
             <View style={styles.actions}>
               <Text style={styles.status}>Result Submitted</Text>
               <Text style={styles.meta}>
-                {match.waitingForOpponent ? "Waiting for opponent confirmation." : "Your opponent submitted a result. Confirmation is not part of this loop."}
+                {match.waitingForOpponent ? "Waiting for opponent confirmation." : "Review the submitted result."}
               </Text>
+              <Text style={styles.meta}>Winner: {getWinnerName(match)}</Text>
               {match.scoreSummary ? <Text style={styles.meta}>Score: {match.scoreSummary}</Text> : null}
+              {match.waitingForCurrentUser ? (
+                <>
+                  <Button
+                    label="Confirm Result"
+                    onPress={() => void handleResultAction(match, "confirm")}
+                    loading={actioningMatchId === match.id}
+                    disabled={Boolean(actioningMatchId)}
+                  />
+                  <Button
+                    label="Dispute Result"
+                    tone="secondary"
+                    onPress={() => void handleResultAction(match, "dispute")}
+                    disabled={Boolean(actioningMatchId)}
+                  />
+                </>
+              ) : null}
             </View>
           )}
         </Card>

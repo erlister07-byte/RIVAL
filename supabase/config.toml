@@ -27,3 +27,9 @@ verify_jwt = false
 
 [functions.submit-match-result]
 verify_jwt = false
+
+[functions.confirm-match-result]
+verify_jwt = false
+
+[functions.reject-match-result]
+verify_jwt = false

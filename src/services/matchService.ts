@@ -83,10 +83,11 @@ export type LoopTwoMatch = {
   opponent: { profileId: string; displayName: string };
   counterpart: { profileId: string; displayName: string };
   callerIsChallenger: boolean;
-  resultStatus: "pending_submission" | "pending_confirmation";
+  resultStatus: "pending_submission" | "pending_confirmation" | "confirmed" | "disputed";
   winnerProfileId: string | null;
   scoreSummary: string | null;
   submittedAt: string | null;
+  confirmedAt: string | null;
   waitingForOpponent: boolean;
   waitingForCurrentUser: boolean;
 };
@@ -157,6 +158,34 @@ export async function submitLoopTwoMatchResult(input: {
   }>("submit-match-result", input);
   if (!response.match) {
     throw new Error("Match service returned no submitted match.");
+  }
+
+  return response.match;
+}
+
+type LoopTwoMatchResolution = {
+  id: string;
+  resultStatus: "confirmed" | "disputed";
+  confirmedAt?: string | null;
+};
+
+export async function confirmLoopTwoMatchResult(matchId: string): Promise<LoopTwoMatchResolution> {
+  const response = await invokeLoopTwoMatchFunction<{
+    match?: { id: string; resultStatus: "confirmed"; confirmedAt: string | null };
+  }>("confirm-match-result", { matchId });
+  if (!response.match) {
+    throw new Error("Match service returned no confirmed match.");
+  }
+
+  return response.match;
+}
+
+export async function rejectLoopTwoMatchResult(matchId: string): Promise<LoopTwoMatchResolution> {
+  const response = await invokeLoopTwoMatchFunction<{
+    match?: { id: string; resultStatus: "disputed" };
+  }>("reject-match-result", { matchId });
+  if (!response.match) {
+    throw new Error("Match service returned no disputed match.");
   }
 
   return response.match;

@@ -52,12 +52,20 @@ export function LoopTwoSubmitMatchResultScreen({ navigation, route }: Props) {
   if (!match || error) {
     return <Screen><Card><Text style={styles.error}>{error || "Match not found."}</Text><Button label="Back to Matches" tone="secondary" onPress={() => navigation.navigate("MatchInbox")} /></Card></Screen>;
   }
-  if (submitted || match.resultStatus === "pending_confirmation") {
+  const terminalState = submitted || match.resultStatus === "pending_confirmation"
+    ? { title: "Result Submitted", description: "Waiting for opponent confirmation." }
+    : match.resultStatus === "confirmed"
+      ? { title: "Result Confirmed", description: "The match result has been confirmed." }
+      : match.resultStatus === "disputed"
+        ? { title: "Result Disputed", description: "The submitted result was disputed." }
+        : null;
+
+  if (terminalState) {
     return (
       <Screen>
         <Card>
-          <Text style={styles.title}>Result Submitted</Text>
-          <Text style={styles.meta}>Waiting for opponent confirmation.</Text>
+          <Text style={styles.title}>{terminalState.title}</Text>
+          <Text style={styles.meta}>{terminalState.description}</Text>
           <Button label="Back to Matches" tone="secondary" onPress={() => navigation.navigate("MatchInbox")} />
         </Card>
       </Screen>

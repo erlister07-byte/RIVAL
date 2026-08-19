@@ -161,13 +161,55 @@ Phase 3 covers only: accepted direct match → Match Inbox → Submit Result →
 - Negative/security cases not runtime-executed are recorded as static or live-privilege verification rather than runtime-response passes.
 - The fifteen historical migration-history discrepancies remain outstanding.
 
+## Phase 4 Scope
+
+Phase 4 covers only `pending_confirmation` → `confirmed` or `disputed`, then stops. It does not add dispute resolution, result resubmission, auto-confirm, Open Challenge, full Results Inbox behavior, realtime result subscriptions, or progression UI.
+
+## Phase 4 Security Boundary
+
+Firebase Auth → Firebase ID token → Firebase-authenticated Edge Function → internal token verification → server-derived caller profile → service-role RPC.
+
+- `confirm-match-result` and `reject-match-result` accept only `{ matchId }`; neither accepts a profile ID, Firebase UID, lifecycle status, confirmation method, challenge state, rating, stat, or progression value from the client.
+- The deployed functions verify Firebase tokens internally and derive the caller from verified claims before resolving the RIVAL profile.
+- Direct browser execution of the confirm, reject, submit, and auto-confirm RPCs remains revoked for anonymous and authenticated roles. No migration was required for Phase 4.
+
+## Phase 4 Live Verification and Deployment
+
+- **LIVE METADATA/PRIVILEGE PASS:** pre-implementation Dashboard verification confirmed confirm/reject RPCs are service-role-only. The approved canonical confirmation effects are challenge completion, basic profile-stat recount, and one trigger-owned `match_completed` activity event; ratings/ELO, XP, levels, badges, leaderboards, rivalries, rematches, and other progression are not part of this phase.
+- **DEPLOYED:** `confirm-match-result`, `reject-match-result`, and the updated `get-user-matches` were deployed to `rgquxhkburgpzghwslbd` with `verify_jwt = false`, where Firebase verification is performed internally.
+
+## Phase 4 Confirmation QA
+
+- **MANUAL RUNTIME PASS — Aug 18 fixture:** Ryan and Keither verified the submitted Pickleball result at Kits Beach Courts, scheduled Aug 18 at 6:30 p.m., with Keither as winner and score `11-7`.
+- **MANUAL RUNTIME PASS — role isolation:** Ryan, the non-submitting opponent, saw the submitted winner and score with Confirm Result and Dispute Result, but no Submit Result. Keither, the submitter, saw Result Submitted and waiting-only state with no mutation controls.
+- **MANUAL RUNTIME PASS — confirmation:** Ryan confirmed once. Both participants subsequently saw Result Confirmed with Keither as winner and score `11-7`; no Confirm, Dispute, or Submit Result controls remained.
+- **MANUAL RUNTIME PASS — focus refresh:** returning to Match Inbox without manual Refresh showed the confirmed terminal state.
+
+## Phase 4 Dispute QA
+
+- **MANUAL RUNTIME PASS — Aug 19 fixture:** a fresh direct Pickleball challenge at Kits Beach Courts, scheduled Aug 19 at 6:30 p.m., was accepted and brought to pending confirmation with Keither as submitted winner and score `11-7`.
+- **MANUAL RUNTIME PASS — role isolation:** Ryan saw Confirm Result and Dispute Result only; Keither saw the waiting-only submitted state.
+- **MANUAL RUNTIME PASS — dispute:** Ryan disputed once. Both participants subsequently saw Result Disputed, the submitted winner, and score `11-7`, with no mutation controls.
+- **STATIC/LIVE PRIVILEGE PASS:** the dispute transition remains terminal in Loop 2; no resolution or resubmission UI was introduced.
+
+## Phase 4 Regression and Isolation
+
+- **Phase 1 — MANUAL RUNTIME PASS:** the Aug 19 fixture used the established Nearby Players → direct challenge → pending challenge path. Phase 4 did not modify discovery, challenge creation, navigation, or Loop 1 selection-only behavior.
+- **Phase 2 — MANUAL/STATIC PASS:** the fresh Aug 19 fixture exercised the existing Accept path and match creation. Decline and Cancel were not re-run; static review confirms Phase 4 did not change their client, function, or canonical `canceled` behavior.
+- **Phase 3 — MANUAL RUNTIME PASS:** the Aug 19 fixture exercised accepted match retrieval, participant-only winner selection, score submission, submitter waiting state, opponent visibility, and focus refresh. The Aug 12 fixture remains `pending_submission` and still shows Ready for a result with Submit Result available; it was not mutated.
+- **Excluded behavior — STATIC/RUNTIME PASS:** Loop 2 invokes no auto-confirm, rating/ELO, XP, level, badge, leaderboard, rivalry, rematch, notification, realtime subscription, full Results Inbox, Open Challenge, dispute-resolution, or activity-feed UI. The accepted trigger-owned `match_completed` activity event and basic profile-stat recount remain canonical confirmation side effects only.
+- **Match Inbox scope — STATIC/RUNTIME PASS:** retrieval remains participant-scoped to direct, non-open matches in `pending_submission`, `pending_confirmation`, `confirmed`, or `disputed` states. Terminal direct matches are retained for both participants, but the screen adds no historical result-feed grouping, full Results Inbox navigation, or realtime behavior.
+
+## Phase 4 Limitations
+
+- Confirmation and dispute states were verified through both participants' refreshed UI and deployed function responses; direct SQL inspection of every resulting row, profile-stat recount, and trigger-owned activity row was not performed during manual QA.
+- Destructive concurrency races and authenticated negative request bodies were not re-run for Phase 4; authorization and terminal guards are supported by deployed privilege verification and source review.
+
 ## Deferred to Phase 4+
 
-- Match lifecycle beyond `pending_confirmation`
-- Result confirmation, rejection, and disputes
 - Open Challenge and Quick Match
 - XP, ratings/ELO, badges, streaks, leaderboards, rivalries, and rematches
 
 ## Overall Status
 
-Loop 2 Phases 1 through 3 are functionally verified through persisted sender Pending state, direct-challenge Accept/Decline/Cancel paths, accepted-match retrieval, one result submission, and both participant pending-confirmation views. Direct database-row inspection, authenticated negative-response captures, database-level downstream-table inspection, server-concurrency race behavior, and broader runtime Network/realtime capture remain explicitly limited.
+Loop 2 Phases 1 through 4 are functionally verified through persisted sender Pending state, direct-challenge Accept/Decline/Cancel paths, accepted-match retrieval, participant-scoped result submission, opponent-only confirmation/dispute, and terminal confirmed/disputed views for both participants. Direct database-row inspection, authenticated negative-response captures, database-level downstream-table inspection, server-concurrency race behavior, and broader runtime Network/realtime capture remain explicitly limited.
