@@ -4,7 +4,7 @@ import { DEFAULT_LAUNCH_SPORT } from "@/config/sports";
 import { isMissingColumnError, withOptionalFieldFallback } from "@/shared/lib/schemaDrift";
 import { debugLog } from "@/shared/lib/logger";
 
-import { firebaseAuth } from "./firebase";
+import { getAuthenticatedRequestHeaders } from "./authSession";
 import { mapPlayerSummary } from "./playerMapper";
 import { supabase } from "./supabaseClient";
 
@@ -15,7 +15,7 @@ type SportRow = Database["public"]["Tables"]["sports"]["Row"];
 type ProfileStatsRow = Database["public"]["Tables"]["profile_stats"]["Row"];
 
 export type CreateUserProfileInput = {
-  firebaseUid: string;
+  authUserId: string;
   email: string;
   displayName: string;
   vancouverArea: string;
@@ -145,7 +145,7 @@ function mapProfile(row: ProfileWithRelations): Profile {
 
   return {
     ...playerSummary,
-    firebaseUid: undefined,
+    authUserId: row.auth_user_id ?? undefined,
     email: row.email ?? "",
     vancouverArea: row.vancouver_area,
     challengeRadiusKm: row.challenge_radius_km,
@@ -193,7 +193,6 @@ async function upsertProfileSports(
 export async function createUserProfile(input: CreateUserProfileInput): Promise<Profile> {
   const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  const currentFirebaseUser = firebaseAuth.currentUser;
 
   if (!supabaseProjectUrl) {
     throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
@@ -203,23 +202,19 @@ export async function createUserProfile(input: CreateUserProfileInput): Promise<
     throw new Error("Missing EXPO_PUBLIC_SUPABASE_ANON_KEY");
   }
 
-  if (!currentFirebaseUser) {
-    throw new Error("You must be signed in to create a profile.");
-  }
-
-  const firebaseIdToken = await currentFirebaseUser.getIdToken();
+  const authHeaders = await getAuthenticatedRequestHeaders();
   const functionUrl = `${supabaseProjectUrl}/functions/v1/upsert-profile`;
 
   debugLog("[userService] upserting profile via edge function", {
-    firebaseUid: currentFirebaseUser.uid,
-    requestedFirebaseUid: input.firebaseUid,
+    authUserId: input.authUserId,
+    requestedAuthUserId: input.authUserId,
     hasSports: Boolean(input.sports?.length)
   });
 
   const response = await fetch(functionUrl, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${firebaseIdToken}`,
+      ...authHeaders,
       apikey: supabaseAnonKey,
       "Content-Type": "application/json"
     },
@@ -252,7 +247,6 @@ export async function createUserProfile(input: CreateUserProfileInput): Promise<
 export async function getCurrentUserProfile(): Promise<Profile | null> {
   const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  const currentFirebaseUser = firebaseAuth.currentUser;
 
   if (!supabaseProjectUrl) {
     throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
@@ -262,16 +256,12 @@ export async function getCurrentUserProfile(): Promise<Profile | null> {
     throw new Error("Missing EXPO_PUBLIC_SUPABASE_ANON_KEY");
   }
 
-  if (!currentFirebaseUser) {
-    return null;
-  }
-
-  const firebaseIdToken = await currentFirebaseUser.getIdToken();
+  const authHeaders = await getAuthenticatedRequestHeaders();
   const functionUrl = `${supabaseProjectUrl}/functions/v1/upsert-profile`;
   const response = await fetch(functionUrl, {
     method: "GET",
     headers: {
-      Authorization: `Bearer ${firebaseIdToken}`,
+      ...authHeaders,
       apikey: supabaseAnonKey
     }
   });
@@ -286,19 +276,18 @@ export async function getCurrentUserProfile(): Promise<Profile | null> {
 
 export async function getUserProfile({
   profileId,
-  firebaseUid
+  authUserId
 }: {
   profileId?: string;
-  firebaseUid?: string;
+  authUserId?: string;
 }): Promise<Profile | null> {
-  if (!profileId && !firebaseUid) {
-    throw new Error("getUserProfile requires profileId or firebaseUid");
+  if (!profileId && !authUserId) {
+    throw new Error("getUserProfile requires profileId or authUserId");
   }
 
-  if (firebaseUid && !profileId) {
+  if (authUserId && !profileId) {
     const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-    const currentFirebaseUser = firebaseAuth.currentUser;
 
     if (!supabaseProjectUrl) {
       throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
@@ -308,15 +297,11 @@ export async function getUserProfile({
       throw new Error("Missing EXPO_PUBLIC_SUPABASE_ANON_KEY");
     }
 
-    if (!currentFirebaseUser) {
-      throw new Error("You must be signed in to load your profile.");
-    }
-
-    const firebaseIdToken = await currentFirebaseUser.getIdToken();
+    const authHeaders = await getAuthenticatedRequestHeaders();
     const response = await fetch(`${supabaseProjectUrl}/functions/v1/get-current-profile`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${firebaseIdToken}`,
+        ...authHeaders,
         apikey: supabaseAnonKey
       }
     });
@@ -342,7 +327,7 @@ export async function getUserProfile({
       return query.eq("id", profileId);
     }
 
-    return query.eq("firebase_uid", firebaseUid as string);
+    return query.eq("auth_user_id", authUserId as string);
   }
 
   let { data, error } = await applyProfileFilter(
@@ -352,7 +337,7 @@ export async function getUserProfile({
   if (error && (isMissingAvailabilityColumnError(error) || isMissingPlayStyleTagsColumnError(error))) {
     debugLog("[userService] profile select fallback without optional profile fields", {
       profileId: profileId ?? null,
-      firebaseUid: firebaseUid ?? null
+      authUserId: authUserId ?? null
     });
     ({ data, error } = await applyProfileFilter(
       supabase.from("profiles").select(
@@ -471,23 +456,18 @@ export async function searchProfilesByUsername(
 
   const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  const currentFirebaseUser = firebaseAuth.currentUser;
 
   if (!supabaseProjectUrl || !supabaseAnonKey) {
     throw new Error("Supabase is not configured.");
   }
 
-  if (!currentFirebaseUser) {
-    throw new Error("You must be signed in to search for players.");
-  }
-
-  const firebaseIdToken = await currentFirebaseUser.getIdToken();
+  const authHeaders = await getAuthenticatedRequestHeaders();
   const functionUrl = new URL(`${supabaseProjectUrl}/functions/v1/search-profiles`);
   functionUrl.searchParams.set("query", normalizedQuery);
   const response = await fetch(functionUrl.toString(), {
     method: "GET",
     headers: {
-      Authorization: `Bearer ${firebaseIdToken}`,
+      ...authHeaders,
       apikey: supabaseAnonKey
     }
   });

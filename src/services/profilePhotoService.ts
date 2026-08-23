@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 
-import { firebaseAuth } from "@/services/firebase";
+import { getAuthenticatedRequestHeaders } from "@/services/authSession";
 import { AVATAR_BUCKET, createAvatarVersion, getAvatarPublicUrl, getAvatarStoragePath } from "@/shared/lib/avatar";
 import { debugError, debugLog, getSafeErrorPayload } from "@/shared/lib/logger";
 
@@ -18,15 +18,12 @@ export async function uploadProfilePhoto({
   const storagePath = getAvatarStoragePath(profileId);
   const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  const currentFirebaseUser = firebaseAuth.currentUser;
 
   console.log("[profilePhotoService] upload start", {
     bucket: AVATAR_BUCKET,
     profileId,
     storagePath,
     mimeType: mimeType ?? "image/jpeg",
-    hasFirebaseUser: Boolean(currentFirebaseUser?.uid),
-    firebaseUid: currentFirebaseUser?.uid ?? null,
     imageUri,
     supabaseProjectUrl
   });
@@ -40,11 +37,7 @@ export async function uploadProfilePhoto({
       throw new Error("Missing EXPO_PUBLIC_SUPABASE_ANON_KEY");
     }
 
-    if (!currentFirebaseUser) {
-      throw new Error("You need to be signed in to upload a photo.");
-    }
-
-    const firebaseIdToken = await currentFirebaseUser.getIdToken();
+    const authHeaders = await getAuthenticatedRequestHeaders();
     const functionUrl = `${supabaseProjectUrl}/functions/v1/upload-avatar`;
 
     console.log("[profilePhotoService] file conversion start", {
@@ -93,13 +86,13 @@ export async function uploadProfilePhoto({
       profileId,
       storagePath,
       contentType,
-      hasFirebaseIdToken: Boolean(firebaseIdToken)
+      hasAuthSession: true
     });
 
     const uploadResponse = await fetch(functionUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${firebaseIdToken}`,
+        ...authHeaders,
         apikey: supabaseAnonKey
       },
       body: formData
@@ -164,8 +157,6 @@ export async function uploadProfilePhoto({
       profileId,
       storagePath,
       mimeType: mimeType ?? "image/jpeg",
-      hasFirebaseUser: Boolean(currentFirebaseUser?.uid),
-      firebaseUid: currentFirebaseUser?.uid ?? null,
       imageUri,
       supabaseProjectUrl,
       error
@@ -175,8 +166,6 @@ export async function uploadProfilePhoto({
       profileId,
       storagePath,
       mimeType: mimeType ?? "image/jpeg",
-      hasFirebaseUser: Boolean(currentFirebaseUser?.uid),
-      firebaseUid: currentFirebaseUser?.uid ?? null,
       imageUri,
       supabaseProjectUrl
     });

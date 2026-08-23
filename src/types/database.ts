@@ -461,12 +461,13 @@ export type Database = {
       };
       profiles: {
         Row: {
+          auth_user_id: string | null;
           availability_status: string | null;
           challenge_radius_km: number;
           created_at: string;
           display_name: string;
           email: string | null;
-          firebase_uid: string;
+          firebase_uid: string | null;
           id: string;
           latitude: number | null;
           longitude: number | null;
@@ -477,12 +478,13 @@ export type Database = {
           vancouver_area: string;
         };
         Insert: {
+          auth_user_id?: string | null;
           availability_status?: string | null;
           challenge_radius_km?: number;
           created_at?: string;
           display_name: string;
           email?: string | null;
-          firebase_uid: string;
+          firebase_uid?: string | null;
           id?: string;
           latitude?: number | null;
           longitude?: number | null;
@@ -493,12 +495,13 @@ export type Database = {
           vancouver_area: string;
         };
         Update: {
+          auth_user_id?: string | null;
           availability_status?: string | null;
           challenge_radius_km?: number;
           created_at?: string;
           display_name?: string;
           email?: string | null;
-          firebase_uid?: string;
+          firebase_uid?: string | null;
           id?: string;
           latitude?: number | null;
           longitude?: number | null;
@@ -670,6 +673,10 @@ export type Database = {
         Returns: undefined;
       };
       requesting_firebase_uid: {
+        Args: Record<PropertyKey, never>;
+        Returns: string;
+      };
+      requesting_user_id: {
         Args: Record<PropertyKey, never>;
         Returns: string;
       };

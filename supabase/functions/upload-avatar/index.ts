@@ -1,18 +1,14 @@
+import { getAuthenticatedUserId } from "../_shared/auth.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "npm:jose@5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
 };
 
-const firebaseProjectId = Deno.env.get("FIREBASE_PROJECT_ID");
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-if (!firebaseProjectId) {
-  throw new Error("Missing FIREBASE_PROJECT_ID");
-}
 
 if (!supabaseUrl) {
   throw new Error("Missing SUPABASE_URL");
@@ -22,9 +18,6 @@ if (!supabaseServiceRoleKey) {
   throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
 }
 
-const firebaseJwks = createRemoteJWKSet(
-  new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com")
-);
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: {
@@ -43,32 +36,7 @@ function jsonResponse(status: number, body: Record<string, unknown>) {
   });
 }
 
-async function verifyFirebaseToken(authorizationHeader: string | null) {
-  if (!authorizationHeader?.startsWith("Bearer ")) {
-    throw new Error("Missing Firebase bearer token");
-  }
 
-  const token = authorizationHeader.slice("Bearer ".length).trim();
-
-  const { payload } = await jwtVerify(token, firebaseJwks, {
-    issuer: `https://securetoken.google.com/${firebaseProjectId}`,
-    audience: firebaseProjectId
-  });
-
-  return payload;
-}
-
-function getFirebaseUid(payload: JWTPayload) {
-  if (typeof payload.user_id === "string") {
-    return payload.user_id;
-  }
-
-  if (typeof payload.sub === "string") {
-    return payload.sub;
-  }
-
-  throw new Error("Firebase token missing user id");
-}
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -80,8 +48,7 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const payload = await verifyFirebaseToken(request.headers.get("Authorization"));
-    const firebaseUid = getFirebaseUid(payload);
+    const authUserId = await getAuthenticatedUserId(request);
     const formData = await request.formData();
     const requestedProfileId = formData.get("profileId");
     const file = formData.get("file");
@@ -92,20 +59,20 @@ Deno.serve(async (request) => {
 
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
-      .select("id, firebase_uid")
-      .eq("firebase_uid", firebaseUid)
+      .select("id, auth_user_id")
+      .eq("auth_user_id", authUserId)
       .maybeSingle();
 
     if (profileError) {
       console.error("[upload-avatar] profile lookup failed", {
-        firebaseUid,
+        authUserId,
         error: profileError
       });
       return jsonResponse(500, { error: profileError.message });
     }
 
     if (!profile) {
-      return jsonResponse(404, { error: "Profile not found for Firebase user" });
+      return jsonResponse(404, { error: "Profile not found for authenticated user" });
     }
 
     if (typeof requestedProfileId === "string" && requestedProfileId !== profile.id) {
@@ -117,7 +84,7 @@ Deno.serve(async (request) => {
     const fileBuffer = await file.arrayBuffer();
 
     console.log("[upload-avatar] verified upload request", {
-      firebaseUid,
+      authUserId,
       profileId: profile.id,
       storagePath,
       contentType,
@@ -134,7 +101,7 @@ Deno.serve(async (request) => {
 
     if (uploadError) {
       console.error("[upload-avatar] storage upload failed", {
-        firebaseUid,
+        authUserId,
         profileId: profile.id,
         storagePath,
         error: uploadError
@@ -151,7 +118,7 @@ Deno.serve(async (request) => {
     } = supabaseAdmin.storage.from("avatars").getPublicUrl(storagePath);
 
     console.log("[upload-avatar] avatar upload succeeded", {
-      firebaseUid,
+      authUserId,
       profileId: profile.id,
       storagePath,
       uploadData,

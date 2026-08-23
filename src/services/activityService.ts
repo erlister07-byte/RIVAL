@@ -1,5 +1,5 @@
 import { ActivityEvent, ActivityEventType, ActivityFeedItem, SportSlug } from "@/core/types/models";
-import { firebaseAuth } from "@/services/firebase";
+import { getAuthenticatedRequestHeaders } from "@/services/authSession";
 import { Database, Json } from "@/types/database";
 import { debugError, debugLog, getSafeErrorPayload } from "@/shared/lib/logger";
 import { toServiceError } from "@/shared/lib/serviceError";
@@ -129,7 +129,6 @@ export async function getActivityFeed(
   try {
     const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-    const currentFirebaseUser = firebaseAuth.currentUser;
 
     if (!supabaseProjectUrl) {
       throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
@@ -139,11 +138,7 @@ export async function getActivityFeed(
       throw new Error("Missing EXPO_PUBLIC_SUPABASE_ANON_KEY");
     }
 
-    if (!currentFirebaseUser) {
-      throw new Error("You need to be signed in to load your activity.");
-    }
-
-    const firebaseIdToken = await currentFirebaseUser.getIdToken();
+    const authHeaders = await getAuthenticatedRequestHeaders();
     functionUrl = `${supabaseProjectUrl}/functions/v1/get-activity-feed`;
 
     console.log("[activityService] edge function request", {
@@ -155,21 +150,21 @@ export async function getActivityFeed(
       functionUrl,
       profileId,
       limit: options.limit ?? 25,
-      hasFirebaseUser: Boolean(currentFirebaseUser.uid),
-      firebaseUid: currentFirebaseUser.uid
+      hasAuthSession: Boolean(undefined),
+      authUserId: undefined
     });
     debugLog("[activityService] using edge function feed path", {
       functionUrl,
       profileId,
       limit: options.limit ?? 25,
-      hasFirebaseUser: Boolean(currentFirebaseUser.uid),
-      firebaseUid: currentFirebaseUser.uid
+      hasAuthSession: Boolean(undefined),
+      authUserId: undefined
     });
 
     const feedResponse = await fetch(functionUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${firebaseIdToken}`,
+        ...authHeaders,
         apikey: supabaseAnonKey,
         "Content-Type": "application/json"
       },

@@ -150,7 +150,7 @@ export type PlayerSummary = {
 };
 
 export type Profile = PlayerSummary & {
-  firebaseUid?: string;
+  authUserId?: string;
   email: string;
   vancouverArea: string;
   challengeRadiusKm: number;

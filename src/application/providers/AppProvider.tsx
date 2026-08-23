@@ -1,14 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import {
-  User as FirebaseUser,
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-  reload,
-  sendEmailVerification,
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
-  signOut
-} from "firebase/auth";
+import { User } from "@supabase/supabase-js";
 
 import {
   AvailabilityStatus,
@@ -29,7 +20,7 @@ import {
   declineChallenge as declineChallengeRecord,
   getChallengesForProfile
 } from "@/services/challengeService";
-import { firebaseAuth } from "@/services/firebase";
+import { supabase } from "@/services/supabaseClient";
 import {
   confirmMatchResult,
   getMatchesForProfile,
@@ -92,7 +83,7 @@ type AppContextValue = {
   isHydratingProfile: boolean;
   isAuthenticated: boolean;
   sessionStatus: SessionStatus;
-  authUser: FirebaseUser | null;
+  authUser: User | null;
   currentUser: Profile | null;
   nearbyPlayers: NearbyPlayer[];
   challenges: Challenge[];
@@ -151,7 +142,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [isBooting, setIsBooting] = useState(true);
   const [isHydratingProfile, setIsHydratingProfile] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
+  const [authUser, setAuthUser] = useState<User | null>(null);
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [nearbyPlayers, setNearbyPlayers] = useState<NearbyPlayer[]>([]);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
@@ -208,17 +199,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ? "booting"
     : !isAuthenticated
       ? "signed_out"
-      : authUser && !authUser.emailVerified
+      : authUser && !authUser.email_confirmed_at
         ? "needs_verification"
       : !currentUser || !currentUser.onboardingCompleted
         ? "needs_onboarding"
         : "authenticated";
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, async (nextAuthUser) => {
+    async function hydrateSessionUser(nextAuthUser: User | null) {
       debugLog("[AppProvider] auth state changed", {
-        firebaseUid: nextAuthUser?.uid ?? null,
-        emailVerified: nextAuthUser?.emailVerified ?? false
+        authUserId: nextAuthUser?.id ?? null,
+        emailVerified: Boolean(nextAuthUser?.email_confirmed_at)
       });
 
       setIsBooting(true);
@@ -239,12 +230,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         setIsHydratingProfile(true);
         debugLog("[AppProvider] profile loading started", {
-          firebaseUid: nextAuthUser.uid
+          authUserId: nextAuthUser.id
         });
         const profile = await getCurrentUserProfile();
 
         debugLog("[AppProvider] profile lookup completed", {
-          firebaseUid: nextAuthUser.uid,
+          authUserId: nextAuthUser.id,
           profileFound: Boolean(profile),
           profileId: profile?.id ?? null,
           onboardingCompleted: profile?.onboardingCompleted ?? null,
@@ -259,7 +250,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         debugLog("[AppProvider] hydrated current user from Supabase profile", {
-          firebaseUid: nextAuthUser.uid,
+          authUserId: nextAuthUser.id,
           profileId: profile.id,
           onboardingCompleted: profile.onboardingCompleted
         });
@@ -288,7 +279,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setRecentMatches(recent);
           } catch (secondaryError) {
             debugError("Failed to load profile secondary data", secondaryError, {
-              firebaseUid: nextAuthUser.uid,
+              authUserId: nextAuthUser.id,
               profileId: profile.id
             });
           }
@@ -301,9 +292,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setIsHydratingProfile(false);
         setIsBooting(false);
       }
+    }
+
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        debugError("Failed to restore Supabase session", error);
+        setIsBooting(false);
+        return;
+      }
+
+      void hydrateSessionUser(data.session?.user ?? null);
     });
 
-    return unsubscribe;
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Run profile queries after the auth callback releases Supabase's internal lock.
+      setTimeout(() => void hydrateSessionUser(session?.user ?? null), 0);
+    });
+
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -434,51 +440,58 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [currentUser?.id, currentUser?.onboardingCompleted]);
 
   async function signUp(input: AuthFormInput) {
-    const credentials = await createUserWithEmailAndPassword(
-      firebaseAuth,
-      normalizeEmail(input.email),
-      input.password
-    );
+    const { error } = await supabase.auth.signUp({
+      email: normalizeEmail(input.email),
+      password: input.password
+    });
 
-    try {
-      await sendEmailVerification(credentials.user);
-    } catch (error) {
-      debugError("Failed to send verification email", error, { userId: credentials.user.uid });
+    if (error) {
+      throw error;
     }
   }
 
   async function login(input: AuthFormInput) {
-    await signInWithEmailAndPassword(firebaseAuth, normalizeEmail(input.email), input.password);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: normalizeEmail(input.email),
+      password: input.password
+    });
+
+    if (error) {
+      throw error;
+    }
   }
 
   async function logout() {
-    await signOut(firebaseAuth);
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
   }
 
   async function requestPasswordReset(email: string) {
-    await sendPasswordResetEmail(firebaseAuth, normalizeEmail(email));
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizeEmail(email));
+    if (error) throw error;
   }
 
   async function resendVerificationEmail() {
-    if (!firebaseAuth.currentUser) {
+    if (!authUser?.email) {
       throw new Error("You must be signed in to resend verification.");
     }
 
-    await sendEmailVerification(firebaseAuth.currentUser);
+    const { error } = await supabase.auth.resend({ type: "signup", email: authUser.email });
+    if (error) throw error;
   }
 
   async function refreshAuthUser() {
-    if (!firebaseAuth.currentUser) {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) {
       throw new Error("You must be signed in to refresh your account.");
     }
 
-    await reload(firebaseAuth.currentUser);
-    setAuthUser({ ...firebaseAuth.currentUser });
-    setIsAuthenticated(Boolean(firebaseAuth.currentUser));
+    setAuthUser(data.user);
+    setIsAuthenticated(true);
   }
 
   async function completeOnboarding(input: OnboardingInput) {
-    if (!authUser?.uid) {
+    if (!authUser?.id) {
       throw new Error("You must be authenticated to complete onboarding.");
     }
 
@@ -497,11 +510,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     try {
       debugLog("[AppProvider] upserting profile during onboarding", {
-        firebaseUid: authUser.uid,
+        authUserId: authUser.id,
         onboardingCompleted: true
       });
       profile = await createUserProfile({
-        firebaseUid: authUser.uid,
+        authUserId: authUser.id,
         email: authUser.email ?? "",
         displayName: input.displayName,
         vancouverArea: input.vancouverArea,

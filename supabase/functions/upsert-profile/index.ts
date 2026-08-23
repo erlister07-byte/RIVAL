@@ -1,5 +1,5 @@
+import { getAuthenticatedUser } from "../_shared/auth.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "npm:jose@5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,7 +7,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
 };
 
-const firebaseProjectId = Deno.env.get("FIREBASE_PROJECT_ID");
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -36,39 +35,7 @@ function jsonResponse(status: number, body: Record<string, unknown>) {
   });
 }
 
-async function verifyFirebaseToken(authorizationHeader: string | null) {
-  if (!firebaseProjectId) {
-    throw new Error("Missing FIREBASE_PROJECT_ID");
-  }
 
-  if (!authorizationHeader?.startsWith("Bearer ")) {
-    throw new Error("Missing Firebase bearer token");
-  }
-
-  const token = authorizationHeader.slice("Bearer ".length).trim();
-  const firebaseJwks = createRemoteJWKSet(
-    new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com")
-  );
-
-  const { payload } = await jwtVerify(token, firebaseJwks, {
-    issuer: `https://securetoken.google.com/${firebaseProjectId}`,
-    audience: firebaseProjectId
-  });
-
-  return payload;
-}
-
-function getFirebaseUid(payload: JWTPayload) {
-  if (typeof payload.user_id === "string") {
-    return payload.user_id;
-  }
-
-  if (typeof payload.sub === "string") {
-    return payload.sub;
-  }
-
-  throw new Error("Firebase token missing user id");
-}
 
 function createSupabaseAdmin() {
   if (!supabaseUrl) {
@@ -107,7 +74,7 @@ function getFriendlyProfileError(error: { message?: string; code?: string; detai
 function getProfileSelect() {
   return `
     id,
-    firebase_uid,
+    auth_user_id,
     email,
     username,
     display_name,
@@ -138,20 +105,20 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const payload = await verifyFirebaseToken(request.headers.get("Authorization"));
-    const firebaseUid = getFirebaseUid(payload);
+    const authUser = await getAuthenticatedUser(request);
+    const authUserId = authUser.id;
     const supabaseAdmin = createSupabaseAdmin();
 
     if (request.method === "GET") {
       const { data: profile, error: profileError } = await supabaseAdmin
         .from("profiles")
         .select(getProfileSelect())
-        .eq("firebase_uid", firebaseUid)
+        .eq("auth_user_id", authUserId)
         .maybeSingle();
 
       if (profileError) {
         console.error("[upsert-profile] profile lookup failed", {
-          firebaseUid,
+          authUserId,
           error: profileError
         });
         return jsonResponse(500, { error: profileError.message });
@@ -167,7 +134,7 @@ Deno.serve(async (request) => {
 
     const displayName = sanitizeString(requestBody.displayName);
     const vancouverArea = sanitizeString(requestBody.vancouverArea);
-    const email = sanitizeString(requestBody.email);
+    const email = sanitizeString(authUser.email);
 
     if (!displayName) {
       return jsonResponse(400, { error: "Missing displayName" });
@@ -181,29 +148,41 @@ Deno.serve(async (request) => {
       return jsonResponse(400, { error: "Missing challengeRadiusKm" });
     }
 
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .upsert(
-        {
-          firebase_uid: firebaseUid,
-          email: email || null,
-          display_name: displayName,
-          username: displayName,
-          vancouver_area: vancouverArea,
-          challenge_radius_km: requestBody.challengeRadiusKm,
-          availability_status: requestBody.availabilityStatus ?? "unavailable",
-          latitude: requestBody.latitude ?? null,
-          longitude: requestBody.longitude ?? null,
-          onboarding_completed: requestBody.onboardingCompleted ?? false
-        },
-        { onConflict: "firebase_uid" }
-      )
+    const profilePayload = {
+      auth_user_id: authUserId,
+      // Keep the legacy identity column synchronized until the old SQL RPCs
+      // are removed in a follow-up schema cleanup.
+      firebase_uid: authUserId,
+      email: email || null,
+      display_name: displayName,
+      username: displayName,
+      vancouver_area: vancouverArea,
+      challenge_radius_km: requestBody.challengeRadiusKm,
+      availability_status: requestBody.availabilityStatus ?? "unavailable",
+      latitude: requestBody.latitude ?? null,
+      longitude: requestBody.longitude ?? null,
+      onboarding_completed: requestBody.onboardingCompleted ?? false
+    };
+
+    const { data: existingProfile } = email
+      ? await supabaseAdmin.from("profiles").select("id, auth_user_id").eq("email", email).maybeSingle()
+      : { data: null };
+
+    if (existingProfile?.auth_user_id && existingProfile.auth_user_id !== authUserId) {
+      return jsonResponse(409, { error: "That email is already linked to another account." });
+    }
+
+    const profileMutation = existingProfile
+      ? supabaseAdmin.from("profiles").update(profilePayload).eq("id", existingProfile.id)
+      : supabaseAdmin.from("profiles").upsert(profilePayload, { onConflict: "auth_user_id" });
+
+    const { data: profile, error: profileError } = await profileMutation
       .select("id")
       .single();
 
     if (profileError) {
       console.error("[upsert-profile] profile upsert failed", {
-        firebaseUid,
+        authUserId,
         error: profileError
       });
       return jsonResponse(409, { error: getFriendlyProfileError(profileError) });
@@ -227,7 +206,7 @@ Deno.serve(async (request) => {
 
       if (sportsError) {
         console.error("[upsert-profile] profile sports upsert failed", {
-          firebaseUid,
+          authUserId,
           profileId: profile.id,
           error: sportsError
         });
@@ -243,7 +222,7 @@ Deno.serve(async (request) => {
 
     if (hydratedProfileError) {
       console.error("[upsert-profile] hydrated profile lookup failed", {
-        firebaseUid,
+        authUserId,
         profileId: profile.id,
         error: hydratedProfileError
       });

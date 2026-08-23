@@ -31,4 +31,4 @@ Notes:
 
 - The seed uses stable UUIDs so it can be rerun without accumulating duplicate QA records.
 - It resets only the records tied to the QA seed users.
-- If you want your logged-in Firebase test account to behave like one of these users, update that profile's `firebase_uid` to your real Firebase UID after signing in once.
+- To associate a seeded profile with a Supabase Auth test account, give the profile the same email address. The onboarding profile upsert will claim that row for the authenticated account.
