@@ -6,6 +6,7 @@ import { Calendar, DateData } from "react-native-calendars";
 import { CircleUserRound, MapPin } from "lucide-react-native";
 
 import { AppStackParamList } from "@/application/navigation/types";
+import { isLoopTwoSandboxMode } from "@/application/config/runtimeConfig";
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
 import { Badge } from "@/components/ui/Badge";
@@ -25,6 +26,7 @@ import {
   getStakeDisplay
 } from "@/core/types/models";
 import { getUserProfile } from "@/services/userService";
+import { createDirectChallenge, createLoopTwoOpenChallenge } from "@/services/challengeService";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
 import { Chip } from "@/shared/components/Chip";
@@ -169,7 +171,7 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
   const { currentUser, nearbyPlayers, createChallenge } = useAppState();
   const isFocused = useIsFocused();
   const isRematch = route.params?.isRematch ?? false;
-  const challengeMode = route.params?.mode ?? "direct";
+  const challengeMode = isLoopTwoSandboxMode && route.params?.mode !== "open" ? "direct" : route.params?.mode ?? "direct";
   const isOpenChallengeMode = challengeMode === "open";
   const isOpponentPrefilled = Boolean(route.params?.opponentId);
   const [sport, setSport] = useState<SportSlug>(getInitialSport(route.params));
@@ -190,6 +192,7 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
   const [error, setError] = useState("");
   const { success, showSuccess, clearSuccess } = useTimedSuccess();
   const resetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const submissionInFlightRef = useRef(false);
   const prefilledOpponentUsername = route.params?.opponentUsername ?? route.params?.opponentName ?? prefilledOpponentName;
   const rematchOpponentName = route.params?.opponentName ?? route.params?.opponentUsername ?? prefilledOpponentName;
   const scheduledAt = useMemo(() => buildScheduledAt(selectedDate, selectedTime), [selectedDate, selectedTime]);
@@ -261,6 +264,14 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
       if (existingOption) {
         if (isActive) {
           setPrefilledOpponentName(route.params?.opponentUsername ?? existingOption.username);
+          setPrefillLoading(false);
+        }
+        return;
+      }
+
+      if (isLoopTwoSandboxMode) {
+        if (isActive) {
+          setPrefilledOpponentName(route.params?.opponentUsername ?? "Selected opponent");
           setPrefillLoading(false);
         }
         return;
@@ -381,6 +392,10 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
   }
 
   async function handleSubmit() {
+    if (submissionInFlightRef.current) {
+      return;
+    }
+
     const normalizedLocation = locationName.trim();
     const normalizedStakeNote = stakeNote.trim();
 
@@ -428,6 +443,7 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
     setStakeNoteError("");
     clearSuccess();
     setLoading(true);
+    submissionInFlightRef.current = true;
 
     try {
       if (resetTimeoutRef.current) {
@@ -443,17 +459,40 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
         challengeMode
       });
 
-      await createChallenge({
-        sport,
-        opponentProfileId: isOpenChallengeMode ? undefined : opponentId,
-        scheduledAt: scheduledAt.toISOString(),
-        locationName: normalizedLocation,
-        challengeType,
-        stakeType: selectedStake.type,
-        stakeLabel: selectedStake.label,
-        stakeNote: normalizedStakeNote || undefined,
-        mode: challengeMode
-      });
+      if (isLoopTwoSandboxMode && isOpenChallengeMode) {
+        await createLoopTwoOpenChallenge({
+          sport,
+          scheduledAt: scheduledAt.toISOString(),
+          locationName: normalizedLocation,
+          challengeType,
+          stakeType: selectedStake.type,
+          stakeLabel: selectedStake.label,
+          stakeNote: normalizedStakeNote || undefined
+        });
+      } else if (isLoopTwoSandboxMode) {
+        await createDirectChallenge({
+          opponentProfileId: opponentId,
+          sport,
+          scheduledAt: scheduledAt.toISOString(),
+          locationName: normalizedLocation,
+          challengeType,
+          stakeType: selectedStake.type,
+          stakeLabel: selectedStake.label,
+          stakeNote: normalizedStakeNote || undefined
+        });
+      } else {
+        await createChallenge({
+          sport,
+          opponentProfileId: isOpenChallengeMode ? undefined : opponentId,
+          scheduledAt: scheduledAt.toISOString(),
+          locationName: normalizedLocation,
+          challengeType,
+          stakeType: selectedStake.type,
+          stakeLabel: selectedStake.label,
+          stakeNote: normalizedStakeNote || undefined,
+          mode: challengeMode
+        });
+      }
 
       const successLabel = selectedOpponentUsername ? `@${selectedOpponentUsername}` : "your opponent";
       showSuccess(
@@ -466,6 +505,22 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
         opponentId: opponentId || null,
         successLabel
       });
+      if (isLoopTwoSandboxMode) {
+        resetTimeoutRef.current = setTimeout(() => {
+          if (isOpenChallengeMode) {
+            (navigation as unknown as { replace: (routeName: string, params: object) => void }).replace("NearbyPlayers", {
+              sport,
+              availability: route.params?.timingContext ?? "today",
+              mode: "play_now"
+            });
+          } else {
+            (navigation as unknown as { replace: (routeName: string) => void }).replace("ChallengeInbox");
+          }
+          resetTimeoutRef.current = null;
+        }, 900);
+        return;
+      }
+
       debugLog("[CreateChallengeScreen] resetting navigation to Home tab");
       resetTimeoutRef.current = setTimeout(() => {
         navigation.reset({
@@ -485,6 +540,7 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
     } catch (submissionError) {
       setError(getUserSafeErrorMessage(submissionError, "Unable to create challenge."));
     } finally {
+      submissionInFlightRef.current = false;
       setLoading(false);
     }
   }

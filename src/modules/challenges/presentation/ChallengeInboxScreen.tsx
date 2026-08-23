@@ -5,7 +5,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, AppState, StyleSheet, Text, View } from "react-native";
 
-import { AppStackParamList, MainTabParamList } from "@/application/navigation/types";
+import { AppStackParamList, LoopTwoStackParamList, MainTabParamList } from "@/application/navigation/types";
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
 import { getChallengeTypeLabel, getStakeDisplay } from "@/core/types/models";
@@ -33,11 +33,161 @@ import { debugError, debugLog } from "@/shared/lib/logger";
 import { openBetaFeedbackEmail } from "@/shared/lib/betaFeedback";
 import { getDiagnosticErrorMessage, getUserSafeErrorMessage } from "@/shared/lib/serviceError";
 import { useTimedSuccess } from "@/shared/lib/useTimedSuccess";
+import {
+  getLoopTwoChallenges,
+  LoopTwoChallenge,
+  LoopTwoChallengeAction,
+  RespondToLoopTwoChallengeResult,
+  respondToLoopTwoChallenge
+} from "@/services/challengeService";
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList, "ChallengeInbox">,
   NativeStackScreenProps<AppStackParamList>
 >;
+
+export function LoopTwoChallengeInboxScreen({ navigation }: NativeStackScreenProps<LoopTwoStackParamList, "ChallengeInbox">) {
+  const { currentUser, isHydratingProfile } = useAppState();
+  const [challenges, setChallenges] = useState<LoopTwoChallenge[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [terminalResult, setTerminalResult] = useState<{
+    action: LoopTwoChallengeAction;
+    result: RespondToLoopTwoChallengeResult;
+  } | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadChallenges() {
+      if (!currentUser?.id) {
+        if (isActive) {
+          setChallenges([]);
+          setLoading(false);
+        }
+        return;
+      }
+
+      setLoading(true);
+      setError("");
+      try {
+        const nextChallenges = await getLoopTwoChallenges();
+        if (isActive) {
+          setChallenges(nextChallenges.filter((challenge) => challenge.status === "pending"));
+        }
+      } catch (loadError) {
+        if (isActive) {
+          setChallenges([]);
+          setError(getUserSafeErrorMessage(loadError, "Unable to load pending challenges."));
+        }
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadChallenges();
+    return () => {
+      isActive = false;
+    };
+  }, [currentUser?.id, reloadKey]);
+
+  if (!currentUser?.id && isHydratingProfile) {
+    return <Screen><Card><Text style={styles.errorTitle}>Loading pending challenges</Text></Card></Screen>;
+  }
+
+  async function handleAction(challenge: LoopTwoChallenge, action: LoopTwoChallengeAction) {
+    setBusyId(challenge.id);
+    setError("");
+
+    try {
+      const result = await respondToLoopTwoChallenge(challenge.id, action);
+      setChallenges((current) => current.filter((item) => item.id !== challenge.id));
+      setTerminalResult({ action, result });
+    } catch (actionError) {
+      setError(getUserSafeErrorMessage(actionError, "Unable to update this challenge."));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (terminalResult) {
+    const { action, result } = terminalResult;
+    const title = action === "accept" ? "Challenge Accepted" : action === "decline" ? "Challenge Declined" : "Challenge Canceled";
+    const description = action === "accept"
+      ? "Match created. You can submit a result from Matches."
+      : action === "decline"
+        ? "This challenge is no longer pending."
+        : "This challenge is no longer pending.";
+
+    return (
+      <Screen>
+        <Card>
+          <Text style={styles.playerName}>{title}</Text>
+          <Text style={styles.meta}>{result.challenge.opponent.displayName}</Text>
+          <Text style={styles.meta}>{description}</Text>
+          {action === "accept" ? <Button label="View Matches" onPress={() => navigation.navigate("MatchInbox")} /> : null}
+          <Button
+            label="Back to Pending Challenges"
+            tone="secondary"
+            onPress={() => {
+              setTerminalResult(null);
+              setReloadKey((value) => value + 1);
+            }}
+          />
+        </Card>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen>
+      <Card>
+        <Text style={styles.playerName}>Pending Challenges</Text>
+        <Text style={styles.meta}>Respond to direct challenges without leaving this loop.</Text>
+        {error ? <Text style={styles.errorTitle}>{error}</Text> : null}
+        <Button label="Refresh" tone="secondary" onPress={() => setReloadKey((value) => value + 1)} />
+      </Card>
+      {loading ? <ActivityIndicator color={colors.primary} /> : challenges.length === 0 ? (
+        <Card><EmptyState title="No pending challenges" description="Send a direct challenge from Nearby Players to see it here." /></Card>
+      ) : challenges.map((challenge) => (
+        <Card key={challenge.id}>
+          <Text style={styles.playerName}>{challenge.opponent.displayName}</Text>
+          <Text style={styles.meta}>{challenge.sport} · {getChallengeTypeLabel(challenge.challengeType)}</Text>
+          <Text style={styles.meta}>{challenge.locationName} · {formatDateTime(challenge.scheduledAt)}</Text>
+          <Badge label="Pending" tone="default" />
+          {challenge.direction === "incoming" ? (
+            <View style={styles.actions}>
+              <Button
+                label="Accept"
+                onPress={() => void handleAction(challenge, "accept")}
+                loading={busyId === challenge.id}
+              />
+              <Button
+                label="Decline"
+                tone="secondary"
+                onPress={() => void handleAction(challenge, "decline")}
+                disabled={busyId === challenge.id}
+              />
+            </View>
+          ) : (
+            <View style={styles.actions}>
+              <Button
+                label="Cancel Challenge"
+                tone="danger"
+                onPress={() => void handleAction(challenge, "cancel")}
+                loading={busyId === challenge.id}
+              />
+            </View>
+          )}
+        </Card>
+      ))}
+    </Screen>
+  );
+}
 
 export function ChallengeInboxScreen({ navigation }: Props) {
   const { currentUser, respondToChallenge, isHydratingProfile } = useAppState();

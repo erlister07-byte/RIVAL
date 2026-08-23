@@ -3,7 +3,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Pressable, StyleSheet } from "react-native";
 import { Bell, Info, Mail } from "lucide-react-native";
 
-import { isLoopOneSandboxMode } from "@/application/config/runtimeConfig";
+import { isLoopOneSandboxMode, isLoopTwoSandboxMode } from "@/application/config/runtimeConfig";
 import { colors } from "@/application/theme";
 import { BottomTabBar } from "@/components/ui/BottomTabBar";
 import { Header } from "@/components/ui/Header";
@@ -11,12 +11,15 @@ import { LoginScreen } from "@/modules/auth/presentation/LoginScreen";
 import { SignUpScreen } from "@/modules/auth/presentation/SignUpScreen";
 import { WelcomeScreen } from "@/modules/auth/presentation/WelcomeScreen";
 import { CreateChallengeScreen } from "@/modules/challenges/presentation/CreateChallengeScreen";
-import { ChallengeInboxScreen } from "@/modules/challenges/presentation/ChallengeInboxScreen";
+import { ChallengeInboxScreen, LoopTwoChallengeInboxScreen } from "@/modules/challenges/presentation/ChallengeInboxScreen";
 import {
   FullNearbyPlayersScreen,
-  LoopOneNearbyPlayersScreen
+  LoopOneNearbyPlayersScreen,
+  LoopTwoNearbyPlayersScreen
 } from "@/modules/discovery/presentation/NearbyPlayersScreen";
 import { HomeScreen } from "@/modules/home/presentation/HomeScreen";
+import { LoopTwoMatchInboxScreen } from "@/modules/matches/presentation/MatchInboxScreen";
+import { LoopTwoSubmitMatchResultScreen } from "@/modules/matches/presentation/SubmitMatchResultScreen";
 import { OnboardingScreen } from "@/modules/onboarding/presentation/OnboardingScreen";
 import { ProfileScreen } from "@/modules/profile/presentation/ProfileScreen";
 import { ConfirmResultScreen } from "@/modules/results/presentation/ConfirmResultScreen";
@@ -32,6 +35,7 @@ import {
   AppStackParamList,
   AuthStackParamList,
   LoopOneStackParamList,
+  LoopTwoStackParamList,
   MainTabParamList,
   OnboardingStackParamList
 } from "./types";
@@ -40,6 +44,7 @@ import { AuthGate } from "./AuthGate";
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const OnboardingStack = createNativeStackNavigator<OnboardingStackParamList>();
 const LoopOneStack = createNativeStackNavigator<LoopOneStackParamList>();
+const LoopTwoStack = createNativeStackNavigator<LoopTwoStackParamList>();
 const Tabs = createBottomTabNavigator<MainTabParamList>();
 const AppStack = createNativeStackNavigator<AppStackParamList>();
 
@@ -119,6 +124,29 @@ function LoopOneNavigator() {
     >
       <LoopOneStack.Screen name="NearbyPlayers" component={LoopOneNearbyPlayersScreen} />
     </LoopOneStack.Navigator>
+  );
+}
+
+function LoopTwoNavigator() {
+  return (
+    <LoopTwoStack.Navigator
+      screenOptions={({ navigation, route }) => ({
+        headerShadowVisible: false,
+        header: () => (
+          <Header
+            title={route.name === "ChallengeInbox" ? "Pending Challenges" : route.name === "CreateChallenge" ? "Send Challenge" : route.name === "MatchInbox" ? "Matches" : route.name === "SubmitMatchResult" ? "Submit Result" : "Nearby Players"}
+            onBackPress={navigation.canGoBack() ? () => navigation.goBack() : undefined}
+            showBackButton={navigation.canGoBack()}
+          />
+        )
+      })}
+    >
+      <LoopTwoStack.Screen name="NearbyPlayers" component={LoopTwoNearbyPlayersScreen} />
+      <LoopTwoStack.Screen name="CreateChallenge" component={CreateChallengeScreen as never} />
+      <LoopTwoStack.Screen name="ChallengeInbox" component={LoopTwoChallengeInboxScreen} />
+      <LoopTwoStack.Screen name="MatchInbox" component={LoopTwoMatchInboxScreen} />
+      <LoopTwoStack.Screen name="SubmitMatchResult" component={LoopTwoSubmitMatchResultScreen} />
+    </LoopTwoStack.Navigator>
   );
 }
 
@@ -224,7 +252,7 @@ export function RootNavigator() {
     <AuthGate
       signedOut={<AuthNavigator />}
       onboarding={<OnboardingNavigator />}
-      authenticated={isLoopOneSandboxMode ? <LoopOneNavigator /> : <AppNavigator />}
+      authenticated={isLoopOneSandboxMode ? <LoopOneNavigator /> : isLoopTwoSandboxMode ? <LoopTwoNavigator /> : <AppNavigator />}
     />
   );
 }

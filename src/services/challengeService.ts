@@ -32,6 +32,132 @@ export type CreateChallengeInput = {
 const DEFAULT_STAKE_TYPE = "bragging_rights";
 const DEFAULT_STAKE_LABEL = "Bragging Rights";
 
+type LoopTwoChallengeResponse = {
+  id: string;
+  direction: "incoming" | "outgoing";
+  opponent: { username: string; displayName: string };
+  sport: Challenge["sport"];
+  challengeType: Challenge["challengeType"];
+  status: Challenge["status"];
+  createdAt: string;
+  scheduledAt: string;
+  locationName: string;
+  stakeType: string;
+  stakeLabel: string;
+  stakeNote?: string | null;
+};
+
+export type LoopTwoChallenge = LoopTwoChallengeResponse;
+
+export type CreateDirectChallengeInput = {
+  opponentProfileId: string;
+  sport: Challenge["sport"];
+  scheduledAt: string;
+  locationName: string;
+  challengeType: Challenge["challengeType"];
+  stakeType?: string;
+  stakeLabel?: string;
+  stakeNote?: string;
+};
+
+export type CreateLoopTwoOpenChallengeInput = {
+  sport: Challenge["sport"];
+  scheduledAt: string;
+  locationName: string;
+  challengeType: Challenge["challengeType"];
+  stakeType?: string;
+  stakeLabel?: string;
+  stakeNote?: string;
+};
+
+type LoopTwoOpenChallengesResponse = {
+  challenges: OpenChallenge[];
+  ownChallenges: OpenChallenge[];
+};
+
+export type LoopTwoChallengeAction = "accept" | "decline" | "cancel";
+
+export type RespondToLoopTwoChallengeResult = {
+  challenge: LoopTwoChallenge;
+  match?: {
+    id: string;
+    resultStatus: "pending_submission";
+  };
+};
+
+async function invokeLoopTwoChallengeFunction<T>(functionName: string, body: Record<string, unknown> = {}): Promise<T> {
+  const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const currentFirebaseUser = firebaseAuth.currentUser;
+
+  if (!supabaseProjectUrl || !supabaseAnonKey) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  if (!currentFirebaseUser) {
+    throw new Error("You must be signed in to manage challenges.");
+  }
+
+  const firebaseIdToken = await currentFirebaseUser.getIdToken();
+  const response = await fetch(`${supabaseProjectUrl}/functions/v1/${functionName}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${firebaseIdToken}`,
+      apikey: supabaseAnonKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `Unable to complete challenge request (${response.status}).`);
+  }
+
+  if (!payload) {
+    throw new Error("Challenge service returned an empty response.");
+  }
+
+  return payload;
+}
+
+export async function createDirectChallenge(input: CreateDirectChallengeInput): Promise<LoopTwoChallenge> {
+  const response = await invokeLoopTwoChallengeFunction<{ challenge: LoopTwoChallenge }>("create-direct-challenge", input);
+  return response.challenge;
+}
+
+export async function createLoopTwoOpenChallenge(input: CreateLoopTwoOpenChallengeInput): Promise<OpenChallenge> {
+  const response = await invokeLoopTwoChallengeFunction<{ challenge: OpenChallenge }>("create-open-challenge", input);
+  return response.challenge;
+}
+
+export async function getLoopTwoOpenChallenges(sport: Challenge["sport"]): Promise<LoopTwoOpenChallengesResponse> {
+  return invokeLoopTwoChallengeFunction<LoopTwoOpenChallengesResponse>("get-open-challenges", { sport });
+}
+
+export async function acceptLoopTwoOpenChallenge(challengeId: string): Promise<{ matchId: string }> {
+  return invokeLoopTwoChallengeFunction<{ matchId: string }>("accept-open-challenge", { challengeId });
+}
+
+export async function cancelLoopTwoOpenChallenge(challengeId: string): Promise<void> {
+  await invokeLoopTwoChallengeFunction("cancel-open-challenge", { challengeId });
+}
+
+export async function getLoopTwoChallenges(): Promise<LoopTwoChallenge[]> {
+  const response = await invokeLoopTwoChallengeFunction<{ challenges: LoopTwoChallenge[] }>("get-user-challenges");
+  return response.challenges;
+}
+
+export async function respondToLoopTwoChallenge(
+  challengeId: string,
+  action: LoopTwoChallengeAction
+): Promise<RespondToLoopTwoChallengeResult> {
+  return invokeLoopTwoChallengeFunction<RespondToLoopTwoChallengeResult>("respond-to-challenge", {
+    challengeId,
+    action
+  });
+}
+
 export type ChallengeInboxItem = Challenge & {
   counterpartProfileId: string;
   counterpartName: string;
