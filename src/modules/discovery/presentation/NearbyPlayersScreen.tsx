@@ -2,7 +2,11 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, StyleSheet, Text, View } from "react-native";
 
-import { AppStackParamList } from "@/application/navigation/types";
+import {
+  AppStackParamList,
+  LoopOneStackParamList,
+  NearbyPlayersRouteParams
+} from "@/application/navigation/types";
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
 import { DEFAULT_LAUNCH_SPORT, getEnabledSportConfigs, getSportIdBySlug } from "@/config/sports";
@@ -14,7 +18,7 @@ import {
   OpenChallenge
 } from "@/core/types/models";
 import { acceptOpenChallenge, getOpenChallenges } from "@/services/challengeService";
-import { NearbyPlayer, getNearbyPlayers } from "@/services/playerService";
+import { NearbyPlayer, getLoopOneNearbyPlayers, getNearbyPlayers } from "@/services/playerService";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
 import { Chip } from "@/shared/components/Chip";
@@ -26,15 +30,59 @@ import { formatDateTime } from "@/shared/lib/format";
 import { getDiagnosticErrorMessage, getUserSafeErrorMessage } from "@/shared/lib/serviceError";
 
 type Props = NativeStackScreenProps<AppStackParamList, "NearbyPlayers">;
+type LoopOneProps = NativeStackScreenProps<LoopOneStackParamList, "NearbyPlayers">;
+
+type NearbyPlayersContentProps = {
+  routeParams: NearbyPlayersRouteParams;
+  sandboxMode: boolean;
+  onCreateChallenge?: (params: NonNullable<AppStackParamList["CreateChallenge"]>) => void;
+  onNavigateToFriendSearch?: () => void;
+  onOpenChallengeAccepted?: () => void;
+};
 
 const timingOptions: AvailabilityStatus[] = ["now", "today", "this_week"];
 
-export function NearbyPlayersScreen({ navigation, route }: Props) {
+export function FullNearbyPlayersScreen({ navigation, route }: Props) {
+  return (
+    <NearbyPlayersContent
+      routeParams={route.params}
+      sandboxMode={false}
+      onCreateChallenge={(params) => navigation.navigate("CreateChallenge", params)}
+      onNavigateToFriendSearch={() => navigation.navigate("FriendSearch")}
+      onOpenChallengeAccepted={() =>
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: "Tabs",
+              state: {
+                index: 2,
+                routes: [{ name: "Home" }, { name: "ActivityFeed" }, { name: "ChallengeInbox" }]
+              }
+            }
+          ]
+        })
+      }
+    />
+  );
+}
+
+export function LoopOneNearbyPlayersScreen({ route }: LoopOneProps) {
+  return <NearbyPlayersContent routeParams={route.params} sandboxMode />;
+}
+
+function NearbyPlayersContent({
+  routeParams,
+  sandboxMode,
+  onCreateChallenge,
+  onNavigateToFriendSearch,
+  onOpenChallengeAccepted
+}: NearbyPlayersContentProps) {
   const { currentUser, isHydratingProfile } = useAppState();
   const enabledSports = getEnabledSportConfigs();
-  const isPlayNowMode = route.params?.mode === "play_now";
-  const [sport, setSport] = useState(route.params?.sport ?? DEFAULT_LAUNCH_SPORT);
-  const [timingContext, setTimingContext] = useState<AvailabilityStatus>(route.params?.availability ?? "today");
+  const isPlayNowMode = !sandboxMode && routeParams?.mode === "play_now";
+  const [sport, setSport] = useState(routeParams?.sport ?? DEFAULT_LAUNCH_SPORT);
+  const [timingContext, setTimingContext] = useState<AvailabilityStatus>(routeParams?.availability ?? "today");
   const [players, setPlayers] = useState<NearbyPlayer[]>([]);
   const [openChallenges, setOpenChallenges] = useState<OpenChallenge[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +90,7 @@ export function NearbyPlayersScreen({ navigation, route }: Props) {
   const [actionError, setActionError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const [joiningChallengeId, setJoiningChallengeId] = useState<string | null>(null);
+  const [selectedPlayer, setSelectedPlayer] = useState<NearbyPlayer | null>(null);
 
   if (!currentUser?.id && isHydratingProfile) {
     return (
@@ -86,11 +135,13 @@ export function NearbyPlayersScreen({ navigation, route }: Props) {
             setPlayers([]);
           }
         } else {
-          const nextPlayers = await getNearbyPlayers(currentUser.id, {
-            sport,
-            maxDistanceKm: currentUser.challengeRadiusKm,
-            availability: timingContext
-          });
+          const nextPlayers = sandboxMode
+            ? await getLoopOneNearbyPlayers({ sport, availability: timingContext })
+            : await getNearbyPlayers(currentUser.id, {
+                sport,
+                maxDistanceKm: currentUser.challengeRadiusKm,
+                availability: timingContext
+              });
 
           if (isActive) {
             setPlayers(nextPlayers);
@@ -123,12 +174,17 @@ export function NearbyPlayersScreen({ navigation, route }: Props) {
     };
   }, [currentUser?.challengeRadiusKm, currentUser?.id, currentUser?.vancouverArea, isPlayNowMode, reloadKey, sport, timingContext]);
 
-  const headerTitle =
-    isPlayNowMode ? "Find a live game" : "Find someone nearby and start a match";
+  const headerTitle = isPlayNowMode
+    ? "Find a live game"
+    : sandboxMode
+      ? "Find someone nearby"
+      : "Find someone nearby and start a match";
   const headerSubtitle =
     isPlayNowMode
       ? "Join nearby open challenges that are ready for another player."
-      : "Nearby opponents filtered by the sport you play and when you want to get on court.";
+      : sandboxMode
+        ? "Nearby players filtered by the sport you play and when you want to play."
+        : "Nearby opponents filtered by the sport you play and when you want to get on court.";
 
   const emptyDescription = useMemo(() => {
     if (isPlayNowMode) {
@@ -136,15 +192,21 @@ export function NearbyPlayersScreen({ navigation, route }: Props) {
     }
 
     if (timingContext === "now") {
-      return "No one nearby is marked ready now. Try today or this week, or challenge a friend directly.";
+      return sandboxMode
+        ? "No one nearby is marked ready now. Try today or this week."
+        : "No one nearby is marked ready now. Try today or this week, or challenge a friend directly.";
     }
 
     if (timingContext === "today") {
-      return "No one nearby is free today. Try widening the timing to this week or challenge a friend.";
+      return sandboxMode
+        ? "No one nearby is free today. Try widening the timing to this week."
+        : "No one nearby is free today. Try widening the timing to this week or challenge a friend.";
     }
 
-    return "No nearby players matched this timing yet. Try again later or challenge a friend by username.";
-  }, [isPlayNowMode, timingContext]);
+    return sandboxMode
+      ? "No nearby players matched this timing yet. Try again later."
+      : "No nearby players matched this timing yet. Try again later or challenge a friend by username.";
+  }, [isPlayNowMode, sandboxMode, timingContext]);
 
   async function handleJoinOpenChallenge(challenge: OpenChallenge) {
     if (!currentUser?.id) {
@@ -158,18 +220,7 @@ export function NearbyPlayersScreen({ navigation, route }: Props) {
     try {
       await acceptOpenChallenge(challenge.id, currentUser.id);
       setOpenChallenges((current) => current.filter((item) => item.id !== challenge.id));
-      navigation.reset({
-        index: 0,
-        routes: [
-          {
-            name: "Tabs",
-            state: {
-              index: 2,
-              routes: [{ name: "Home" }, { name: "ActivityFeed" }, { name: "ChallengeInbox" }]
-            }
-          }
-        ]
-      });
+      onOpenChallengeAccepted?.();
     } catch (joinError) {
       setActionError(getUserSafeErrorMessage(joinError, "Unable to join this challenge right now."));
     } finally {
@@ -192,15 +243,20 @@ export function NearbyPlayersScreen({ navigation, route }: Props) {
         playStyleTags={item.playStyleTags}
         matchesPlayed={item.matchesPlayed}
         reason={`${item.vancouverArea} · ${getAvailabilityLabel(item.availabilityStatus)}`}
-        actionLabel="Challenge"
-        onPress={() =>
-          navigation.navigate("CreateChallenge", {
+        actionLabel={sandboxMode ? "Select" : "Challenge"}
+        onPress={() => {
+          if (sandboxMode) {
+            setSelectedPlayer(item);
+            return;
+          }
+
+          onCreateChallenge?.({
             opponentId: item.id,
             opponentUsername: item.username,
             sportId: getSportIdBySlug(sport),
             timingContext
-          })
-        }
+          });
+        }}
       />
     );
   }
@@ -230,6 +286,27 @@ export function NearbyPlayersScreen({ navigation, route }: Props) {
           disabled={Boolean(joiningChallengeId && joiningChallengeId !== item.id)}
         />
       </Card>
+    );
+  }
+
+  if (sandboxMode && selectedPlayer) {
+    const selectedSport = selectedPlayer.sports.find((entry) => entry.sport === sport) ?? selectedPlayer.sports[0];
+
+    return (
+      <Screen>
+        <Card>
+          <Text style={styles.kicker}>Player Selected</Text>
+          <Text style={styles.title}>{selectedPlayer.username}</Text>
+          {selectedPlayer.displayName !== selectedPlayer.username ? (
+            <Text style={styles.displayName}>{selectedPlayer.displayName}</Text>
+          ) : null}
+          <Text style={styles.meta}>
+            {selectedSport?.sport ?? sport} · {selectedSport?.skillLevel ?? "Player"}
+          </Text>
+          <Text style={styles.meta}>{selectedPlayer.vancouverArea} · {selectedPlayer.distanceKm.toFixed(1)} km away</Text>
+        </Card>
+        <Button label="Back to Nearby Players" tone="secondary" onPress={() => setSelectedPlayer(null)} />
+      </Screen>
     );
   }
 
@@ -290,7 +367,12 @@ export function NearbyPlayersScreen({ navigation, route }: Props) {
           openChallenges.length === 0 ? (
             <Card>
               <EmptyState title="No live games nearby yet" description={emptyDescription} />
-              <Button label="Post Open Challenge" onPress={() => navigation.navigate("CreateChallenge", { mode: "open", sport })} />
+              <Button
+                label="Post Open Challenge"
+                onPress={() => {
+                  onCreateChallenge?.({ mode: "open", sport });
+                }}
+              />
             </Card>
           ) : (
             <FlatList
@@ -304,7 +386,15 @@ export function NearbyPlayersScreen({ navigation, route }: Props) {
         ) : players.length === 0 ? (
           <Card>
             <EmptyState title="No nearby players found" description={emptyDescription} />
-            <Button label="Challenge a Friend" tone="secondary" onPress={() => navigation.navigate("FriendSearch")} />
+            {sandboxMode ? null : (
+              <Button
+                label="Challenge a Friend"
+                tone="secondary"
+                onPress={() => {
+                  onNavigateToFriendSearch?.();
+                }}
+              />
+            )}
           </Card>
         ) : (
           <FlatList

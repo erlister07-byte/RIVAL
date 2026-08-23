@@ -3,6 +3,7 @@ import { Database } from "@/types/database";
 import { DEFAULT_LAUNCH_SPORT, getSportConfigById, getSportIdBySlug, isSportEnabled } from "@/config/sports";
 import { debugError, debugLog } from "@/shared/lib/logger";
 
+import { firebaseAuth } from "./firebase";
 import { getUserProfile } from "./userService";
 import { supabase } from "./supabaseClient";
 
@@ -26,6 +27,24 @@ export type SuggestedOpponent = NearbyPlayer & {
   matchedSkillLevel?: SkillLevel;
   sportId: number;
   reason: string;
+};
+
+type LoopOneNearbyPlayerResponse = {
+  id: string;
+  username: string;
+  displayName: string;
+  vancouverArea: string;
+  availabilityStatus: AvailabilityStatus;
+  sports: Profile["sports"];
+  wins: number;
+  losses: number;
+  matchesPlayed: number;
+  distanceKm: number;
+};
+
+type LoopOneNearbyPlayersResponse = {
+  error?: string;
+  players?: LoopOneNearbyPlayerResponse[];
 };
 
 type ActivityRow = {
@@ -111,6 +130,55 @@ function calculateDistanceKm(
 
   const arc = 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
   return Number((earthRadiusKm * arc).toFixed(1));
+}
+
+export async function getLoopOneNearbyPlayers({
+  sport,
+  availability
+}: Pick<NearbyPlayerFilters, "sport" | "availability">): Promise<NearbyPlayer[]> {
+  const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const currentFirebaseUser = firebaseAuth.currentUser;
+
+  if (!supabaseProjectUrl) {
+    throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
+  }
+
+  if (!supabaseAnonKey) {
+    throw new Error("Missing EXPO_PUBLIC_SUPABASE_ANON_KEY");
+  }
+
+  if (!currentFirebaseUser) {
+    throw new Error("You must be signed in to load nearby players.");
+  }
+
+  const firebaseIdToken = await currentFirebaseUser.getIdToken();
+  const response = await fetch(`${supabaseProjectUrl}/functions/v1/get-nearby-players`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${firebaseIdToken}`,
+      apikey: supabaseAnonKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ sport, availability })
+  });
+  const payload = (await response.json().catch(() => null)) as LoopOneNearbyPlayersResponse | null;
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `Nearby player lookup failed with status ${response.status}`);
+  }
+
+  if (!payload?.players) {
+    throw new Error("Nearby player response did not include players.");
+  }
+
+  return payload.players.map((player) => ({
+    ...player,
+    email: "",
+    challengeRadiusKm: 0,
+    onboardingCompleted: true,
+    playStyleTags: []
+  }));
 }
 
 export async function getNearbyPlayers(

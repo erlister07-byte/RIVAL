@@ -60,6 +60,11 @@ type UpsertProfileResponse = {
   profile?: ProfileWithRelations;
 };
 
+type GetCurrentProfileResponse = {
+  error?: string;
+  profile?: ProfileWithRelations;
+};
+
 type FriendSearchRow = {
   id: string;
   username: string;
@@ -288,6 +293,48 @@ export async function getUserProfile({
 }): Promise<Profile | null> {
   if (!profileId && !firebaseUid) {
     throw new Error("getUserProfile requires profileId or firebaseUid");
+  }
+
+  if (firebaseUid && !profileId) {
+    const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    const currentFirebaseUser = firebaseAuth.currentUser;
+
+    if (!supabaseProjectUrl) {
+      throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
+    }
+
+    if (!supabaseAnonKey) {
+      throw new Error("Missing EXPO_PUBLIC_SUPABASE_ANON_KEY");
+    }
+
+    if (!currentFirebaseUser) {
+      throw new Error("You must be signed in to load your profile.");
+    }
+
+    const firebaseIdToken = await currentFirebaseUser.getIdToken();
+    const response = await fetch(`${supabaseProjectUrl}/functions/v1/get-current-profile`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${firebaseIdToken}`,
+        apikey: supabaseAnonKey
+      }
+    });
+    const payload = (await response.json().catch(() => null)) as GetCurrentProfileResponse | null;
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(payload?.error ?? `Current profile lookup failed with status ${response.status}`);
+    }
+
+    if (!payload?.profile) {
+      throw new Error("Current profile response did not include a profile.");
+    }
+
+    return mapProfile(payload.profile);
   }
 
   function applyProfileFilter<TQuery extends { eq: (column: string, value: string) => TQuery }>(query: TQuery) {

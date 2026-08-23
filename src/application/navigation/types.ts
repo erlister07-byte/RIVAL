@@ -10,6 +10,18 @@ export type OnboardingStackParamList = {
   Onboarding: undefined;
 };
 
+export type NearbyPlayersRouteParams =
+  | {
+      sport?: SportSlug;
+      availability?: AvailabilityStatus;
+      mode?: "nearby" | "play_now";
+    }
+  | undefined;
+
+export type LoopOneStackParamList = {
+  NearbyPlayers: NearbyPlayersRouteParams;
+};
+
 export type MainTabParamList = {
   Home: undefined;
   ActivityFeed: undefined;
@@ -21,13 +33,7 @@ export type AppStackParamList = {
   Tabs: undefined;
   Leaderboard: undefined;
   FriendSearch: undefined;
-  NearbyPlayers:
-    | {
-        sport?: SportSlug;
-        availability?: AvailabilityStatus;
-        mode?: "nearby" | "play_now";
-      }
-    | undefined;
+  NearbyPlayers: NearbyPlayersRouteParams;
   Messages: undefined;
   Chat: {
     threadId: string;
