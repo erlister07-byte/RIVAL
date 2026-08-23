@@ -1,5 +1,5 @@
+import { getAuthenticatedUserId } from "../_shared/auth.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "npm:jose@5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,12 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
 
-const firebaseProjectId = Deno.env.get("FIREBASE_PROJECT_ID");
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-const firebaseJwks = createRemoteJWKSet(
-  new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com")
-);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type MatchRow = Record<string, unknown> & {
@@ -41,21 +37,7 @@ function jsonResponse(status: number, body: Record<string, unknown>) {
   });
 }
 
-async function verifyFirebaseToken(header: string | null) {
-  if (!firebaseProjectId || !header?.startsWith("Bearer ")) return null;
-  try {
-    return (await jwtVerify(header.slice(7).trim(), firebaseJwks, {
-      issuer: `https://securetoken.google.com/${firebaseProjectId}`,
-      audience: firebaseProjectId
-    })).payload;
-  } catch {
-    return null;
-  }
-}
 
-function getFirebaseUid(payload: JWTPayload) {
-  return typeof payload.user_id === "string" ? payload.user_id : typeof payload.sub === "string" ? payload.sub : null;
-}
 
 function admin() {
   if (!supabaseUrl || !supabaseServiceRoleKey) {
@@ -113,9 +95,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
   try {
-    const claims = await verifyFirebaseToken(request.headers.get("Authorization"));
-    const firebaseUid = claims ? getFirebaseUid(claims) : null;
-    if (!firebaseUid) return jsonResponse(401, { error: "Unauthorized" });
+    const authUserId = await getAuthenticatedUserId(request);
 
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     if (!body) return jsonResponse(400, { error: "Invalid request body" });
@@ -132,10 +112,10 @@ Deno.serve(async (request) => {
     const { data: caller, error: callerError } = await supabaseAdmin
       .from("profiles")
       .select("id")
-      .eq("firebase_uid", firebaseUid)
+      .eq("auth_user_id", authUserId)
       .maybeSingle();
     if (callerError) return jsonResponse(500, { error: "Unable to resolve current profile" });
-    if (!caller) return jsonResponse(404, { error: "Profile not found for Firebase user" });
+    if (!caller) return jsonResponse(404, { error: "Profile not found for authenticated user" });
 
     let query = supabaseAdmin
       .from("matches")

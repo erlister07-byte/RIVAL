@@ -1,5 +1,5 @@
+import { getAuthenticatedUserId } from "../_shared/auth.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "npm:jose@5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,13 +7,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
 
-const firebaseProjectId = Deno.env.get("FIREBASE_PROJECT_ID");
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-const firebaseJwks = createRemoteJWKSet(
-  new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com")
-);
 
 function jsonResponse(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -25,44 +21,7 @@ function jsonResponse(status: number, body: Record<string, unknown>) {
   });
 }
 
-async function verifyFirebaseToken(authorizationHeader: string | null) {
-  if (!firebaseProjectId) {
-    throw new Error("Missing FIREBASE_PROJECT_ID");
-  }
 
-  if (!authorizationHeader?.startsWith("Bearer ")) {
-    return null;
-  }
-
-  const token = authorizationHeader.slice("Bearer ".length).trim();
-
-  if (!token) {
-    return null;
-  }
-
-  try {
-    const { payload } = await jwtVerify(token, firebaseJwks, {
-      issuer: `https://securetoken.google.com/${firebaseProjectId}`,
-      audience: firebaseProjectId
-    });
-
-    return payload;
-  } catch {
-    return null;
-  }
-}
-
-function getFirebaseUid(payload: JWTPayload) {
-  if (typeof payload.user_id === "string") {
-    return payload.user_id;
-  }
-
-  if (typeof payload.sub === "string") {
-    return payload.sub;
-  }
-
-  return null;
-}
 
 function createSupabaseAdmin() {
   if (!supabaseUrl) {
@@ -84,7 +43,7 @@ function createSupabaseAdmin() {
 function getProfileSelect() {
   return `
     id,
-    firebase_uid,
+    auth_user_id,
     email,
     username,
     display_name,
@@ -113,18 +72,13 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const tokenPayload = await verifyFirebaseToken(request.headers.get("Authorization"));
-    const firebaseUid = tokenPayload ? getFirebaseUid(tokenPayload) : null;
-
-    if (!firebaseUid) {
-      return jsonResponse(401, { error: "Unauthorized" });
-    }
+    const authUserId = await getAuthenticatedUserId(request);
 
     const supabaseAdmin = createSupabaseAdmin();
     const { data: profile, error } = await supabaseAdmin
       .from("profiles")
       .select(getProfileSelect())
-      .eq("firebase_uid", firebaseUid)
+      .eq("auth_user_id", authUserId)
       .maybeSingle();
 
     if (error) {
@@ -133,7 +87,7 @@ Deno.serve(async (request) => {
     }
 
     if (!profile) {
-      return jsonResponse(404, { error: "Profile not found for Firebase user" });
+      return jsonResponse(404, { error: "Profile not found for authenticated user" });
     }
 
     return jsonResponse(200, {

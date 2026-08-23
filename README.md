@@ -34,7 +34,7 @@ RIVAL is an Expo / React Native project that can run in the browser and on mobil
    cp .env.example .env
    ```
 
-5. Fill in the public Supabase and Firebase environment variables in `.env`.
+5. Fill in the public Supabase environment variables in `.env`.
 
 ## Run the app
 
@@ -51,3 +51,4 @@ npx expo start
 
 - Real secrets are not committed to the repository.
 - Keep your local `.env` file private and out of git.
+- Supabase provides both authentication and the PostgreSQL-backed application data.

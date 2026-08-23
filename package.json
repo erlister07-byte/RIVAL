@@ -28,7 +28,6 @@
     "expo-linear-gradient": "~15.0.8",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
-    "firebase": "^11.6.0",
     "lucide-react-native": "^0.577.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",

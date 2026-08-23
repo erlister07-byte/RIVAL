@@ -25,7 +25,7 @@
 
 ## RLS recommendations
 
-- If Firebase remains the identity provider, mint Supabase JWTs with a `firebase_uid` claim and use that claim in policies.
+- Use native Supabase Auth user IDs (`auth.uid()`) for profile ownership and RLS policies.
 - Keep `sports` globally readable to authenticated users.
 - Allow broad profile discovery reads for authenticated users, but restrict writes to the owner profile.
 - Restrict challenge and match reads to participants only.
@@ -33,3 +33,5 @@
 - Restrict match result submission and confirmation to match participants only.
 - Keep `profile_stats` readable by the owner at minimum. If public profiles are desired, loosen that policy later.
 - Do not rely only on RLS for lifecycle correctness. Keep status transitions guarded in application logic and add database checks or RPC functions as the app matures.
+
+The `firebase_uid` profile column and `requesting_firebase_uid()` function are temporary compatibility shims for older RPCs. They mirror the Supabase Auth user ID and must not be treated as an external Firebase identity.

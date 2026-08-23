@@ -1,5 +1,5 @@
+import { getAuthenticatedUserId } from "../_shared/auth.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "npm:jose@5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,7 +7,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS"
 };
 
-const firebaseProjectId = Deno.env.get("FIREBASE_PROJECT_ID");
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -21,38 +20,7 @@ function jsonResponse(status: number, body: Record<string, unknown>) {
   });
 }
 
-async function verifyFirebaseToken(authorizationHeader: string | null) {
-  if (!firebaseProjectId) {
-    throw new Error("Missing FIREBASE_PROJECT_ID");
-  }
 
-  if (!authorizationHeader?.startsWith("Bearer ")) {
-    throw new Error("Missing Firebase bearer token");
-  }
-
-  const token = authorizationHeader.slice("Bearer ".length).trim();
-  const firebaseJwks = createRemoteJWKSet(
-    new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com")
-  );
-  const { payload } = await jwtVerify(token, firebaseJwks, {
-    issuer: `https://securetoken.google.com/${firebaseProjectId}`,
-    audience: firebaseProjectId
-  });
-
-  return payload;
-}
-
-function getFirebaseUid(payload: JWTPayload) {
-  if (typeof payload.user_id === "string") {
-    return payload.user_id;
-  }
-
-  if (typeof payload.sub === "string") {
-    return payload.sub;
-  }
-
-  throw new Error("Firebase token missing user id");
-}
 
 function createSupabaseAdmin() {
   if (!supabaseUrl) {
@@ -81,8 +49,7 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const tokenPayload = await verifyFirebaseToken(request.headers.get("Authorization"));
-    const firebaseUid = getFirebaseUid(tokenPayload);
+    const authUserId = await getAuthenticatedUserId(request);
     const query = new URL(request.url).searchParams.get("query")?.trim().replace(/[%_]/g, "") ?? "";
 
     if (query.length < 2) {
@@ -93,7 +60,7 @@ Deno.serve(async (request) => {
     const { data: currentProfile, error: currentProfileError } = await supabaseAdmin
       .from("profiles")
       .select("id")
-      .eq("firebase_uid", firebaseUid)
+      .eq("auth_user_id", authUserId)
       .maybeSingle();
 
     if (currentProfileError) {
@@ -101,7 +68,7 @@ Deno.serve(async (request) => {
     }
 
     if (!currentProfile) {
-      return jsonResponse(404, { error: "Profile not found for Firebase user" });
+      return jsonResponse(404, { error: "Profile not found for authenticated user" });
     }
 
     const { data: profiles, error: searchError } = await supabaseAdmin
@@ -123,7 +90,7 @@ Deno.serve(async (request) => {
 
     if (searchError) {
       console.error("[search-profiles] profile search failed", {
-        firebaseUid,
+        authUserId,
         profileId: currentProfile.id,
         query,
         error: searchError

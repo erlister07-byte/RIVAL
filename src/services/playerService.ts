@@ -3,7 +3,7 @@ import { Database } from "@/types/database";
 import { DEFAULT_LAUNCH_SPORT, getSportConfigById, getSportIdBySlug, isSportEnabled } from "@/config/sports";
 import { debugError, debugLog } from "@/shared/lib/logger";
 
-import { firebaseAuth } from "./firebase";
+import { getAuthenticatedRequestHeaders } from "./authSession";
 import { getUserProfile } from "./userService";
 import { supabase } from "./supabaseClient";
 
@@ -138,7 +138,6 @@ export async function getLoopOneNearbyPlayers({
 }: Pick<NearbyPlayerFilters, "sport" | "availability">): Promise<NearbyPlayer[]> {
   const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  const currentFirebaseUser = firebaseAuth.currentUser;
 
   if (!supabaseProjectUrl) {
     throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
@@ -148,15 +147,11 @@ export async function getLoopOneNearbyPlayers({
     throw new Error("Missing EXPO_PUBLIC_SUPABASE_ANON_KEY");
   }
 
-  if (!currentFirebaseUser) {
-    throw new Error("You must be signed in to load nearby players.");
-  }
-
-  const firebaseIdToken = await currentFirebaseUser.getIdToken();
+  const authHeaders = await getAuthenticatedRequestHeaders();
   const response = await fetch(`${supabaseProjectUrl}/functions/v1/get-nearby-players`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${firebaseIdToken}`,
+      ...authHeaders,
       apikey: supabaseAnonKey,
       "Content-Type": "application/json"
     },

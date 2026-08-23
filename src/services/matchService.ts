@@ -6,7 +6,7 @@ import { debugError, debugLog, getSafeErrorPayload } from "@/shared/lib/logger";
 import { toServiceError } from "@/shared/lib/serviceError";
 
 import { createActivityEvent } from "./activityService";
-import { firebaseAuth } from "./firebase";
+import { getAuthenticatedRequestHeaders } from "./authSession";
 import { applyMatchRatingUpdate } from "./ratingService";
 import { supabase } from "./supabaseClient";
 import { getRecentMatches as getUserRecentMatches, getProfileStats } from "./userService";
@@ -101,21 +101,16 @@ type LoopTwoMatchFunctionResponse = {
 async function invokeLoopTwoMatchFunction<T>(functionName: string, body: Record<string, unknown> = {}): Promise<T> {
   const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  const currentFirebaseUser = firebaseAuth.currentUser;
 
   if (!supabaseProjectUrl || !supabaseAnonKey) {
     throw new Error("Supabase is not configured.");
   }
 
-  if (!currentFirebaseUser) {
-    throw new Error("You must be signed in to manage matches.");
-  }
-
-  const firebaseIdToken = await currentFirebaseUser.getIdToken();
+  const authHeaders = await getAuthenticatedRequestHeaders();
   const response = await fetch(`${supabaseProjectUrl}/functions/v1/${functionName}`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${firebaseIdToken}`,
+      ...authHeaders,
       apikey: supabaseAnonKey,
       "Content-Type": "application/json"
     },
