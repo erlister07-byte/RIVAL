@@ -34,4 +34,4 @@
 - Keep `profile_stats` readable by the owner at minimum. If public profiles are desired, loosen that policy later.
 - Do not rely only on RLS for lifecycle correctness. Keep status transitions guarded in application logic and add database checks or RPC functions as the app matures.
 
-The `firebase_uid` profile column and `requesting_firebase_uid()` function are temporary compatibility shims for older RPCs. They mirror the Supabase Auth user ID and must not be treated as an external Firebase identity.
+Supabase Auth is the sole identity provider. Profiles are owned through `profiles.auth_user_id`, which references `auth.users(id)`; policies and authenticated RPCs resolve the caller with `auth.uid()`.

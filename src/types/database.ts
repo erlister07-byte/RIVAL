@@ -467,7 +467,6 @@ export type Database = {
           created_at: string;
           display_name: string;
           email: string | null;
-          firebase_uid: string | null;
           id: string;
           latitude: number | null;
           longitude: number | null;
@@ -484,7 +483,6 @@ export type Database = {
           created_at?: string;
           display_name: string;
           email?: string | null;
-          firebase_uid?: string | null;
           id?: string;
           latitude?: number | null;
           longitude?: number | null;
@@ -501,7 +499,6 @@ export type Database = {
           created_at?: string;
           display_name?: string;
           email?: string | null;
-          firebase_uid?: string | null;
           id?: string;
           latitude?: number | null;
           longitude?: number | null;
@@ -592,23 +589,6 @@ export type Database = {
         };
         Returns: string;
       };
-      get_activity_feed_for_profile: {
-        Args: {
-          feed_limit?: number | null;
-          target_profile_id: string;
-        };
-        Returns: {
-          actor_profile_id: string;
-          challenge_id: string | null;
-          created_at: string;
-          event_type: string;
-          id: string;
-          match_id: string | null;
-          metadata: Json;
-          sport_slug: Database["public"]["Enums"]["sport_slug"] | null;
-          target_profile_id: string | null;
-        }[];
-      };
       get_open_challenges: {
         Args: {
           p_sport_id?: number | null;
@@ -671,10 +651,6 @@ export type Database = {
           target_profile_id: string;
         };
         Returns: undefined;
-      };
-      requesting_firebase_uid: {
-        Args: Record<PropertyKey, never>;
-        Returns: string;
       };
       requesting_user_id: {
         Args: Record<PropertyKey, never>;

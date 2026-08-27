@@ -150,9 +150,6 @@ Deno.serve(async (request) => {
 
     const profilePayload = {
       auth_user_id: authUserId,
-      // Keep the legacy identity column synchronized until the old SQL RPCs
-      // are removed in a follow-up schema cleanup.
-      firebase_uid: authUserId,
       email: email || null,
       display_name: displayName,
       username: displayName,
