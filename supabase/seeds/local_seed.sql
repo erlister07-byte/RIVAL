@@ -55,17 +55,10 @@ where id in (
   '22222222-2222-2222-2222-222222222222',
   '33333333-3333-3333-3333-333333333333',
   '44444444-4444-4444-4444-444444444444'
-)
-or firebase_uid in (
-  'qa-riley-01',
-  'qa-maya-02',
-  'qa-jordan-03',
-  'qa-sam-04'
 );
 
 insert into public.profiles (
   id,
-  firebase_uid,
   email,
   display_name,
   vancouver_area,
@@ -77,7 +70,6 @@ insert into public.profiles (
 values
   (
     '11111111-1111-1111-1111-111111111111',
-    'qa-riley-01',
     'riley@rival.local',
     'Riley Park',
     'Downtown',
@@ -88,7 +80,6 @@ values
   ),
   (
     '22222222-2222-2222-2222-222222222222',
-    'qa-maya-02',
     'maya@rival.local',
     'Maya Chen',
     'Kitsilano',
@@ -99,7 +90,6 @@ values
   ),
   (
     '33333333-3333-3333-3333-333333333333',
-    'qa-jordan-03',
     'jordan@rival.local',
     'Jordan Lee',
     'Mount Pleasant',
@@ -110,7 +100,6 @@ values
   ),
   (
     '44444444-4444-4444-4444-444444444444',
-    'qa-sam-04',
     'sam@rival.local',
     'Sam Patel',
     'Burnaby',
