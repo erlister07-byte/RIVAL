@@ -10,6 +10,7 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const maxScoreSummaryLength = 120;
+const maxResultNotesLength = 600;
 
 function jsonResponse(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -38,7 +39,7 @@ Deno.serve(async (request) => {
     const authUserId = await getAuthenticatedUserId(request);
 
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-    if (!body || Object.keys(body).some((key) => !["matchId", "winnerProfileId", "scoreSummary"].includes(key))) {
+    if (!body || Object.keys(body).some((key) => !["matchId", "winnerProfileId", "scoreSummary", "resultNotes"].includes(key))) {
       return jsonResponse(400, { error: "Unsupported result submission fields" });
     }
 
@@ -50,9 +51,16 @@ Deno.serve(async (request) => {
     if (body.scoreSummary !== undefined && typeof body.scoreSummary !== "string") {
       return jsonResponse(400, { error: "Invalid score summary" });
     }
+    if (body.resultNotes !== undefined && body.resultNotes !== null && typeof body.resultNotes !== "string") {
+      return jsonResponse(400, { error: "Invalid result notes" });
+    }
     const scoreSummary = typeof body.scoreSummary === "string" ? body.scoreSummary.trim() : "";
+    const resultNotes = typeof body.resultNotes === "string" ? body.resultNotes.trim() : "";
     if (scoreSummary.length > maxScoreSummaryLength) {
       return jsonResponse(400, { error: "Score summary is too long" });
+    }
+    if (resultNotes.length > maxResultNotesLength) {
+      return jsonResponse(400, { error: "Result notes are too long" });
     }
 
     const supabaseAdmin = admin();
@@ -93,7 +101,7 @@ Deno.serve(async (request) => {
       winner_profile_id_param: winnerProfileId,
       loser_profile_id_param: loserProfileId,
       score_summary_param: scoreSummary || null,
-      result_notes_param: null
+      result_notes_param: resultNotes || null
     });
 
     if (rpcError) {

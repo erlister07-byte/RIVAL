@@ -1,13 +1,11 @@
 import { Match, RecentMatch } from "@/core/types/models";
 import { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
-import { Database, Json } from "@/types/database";
+import { Database } from "@/types/database";
 import { DEFAULT_LAUNCH_SPORT } from "@/config/sports";
 import { debugError, debugLog, getSafeErrorPayload } from "@/shared/lib/logger";
 import { toServiceError } from "@/shared/lib/serviceError";
 
-import { createActivityEvent } from "./activityService";
 import { getAuthenticatedRequestHeaders } from "./authSession";
-import { applyMatchRatingUpdate } from "./ratingService";
 import { supabase } from "./supabaseClient";
 import { getRecentMatches as getUserRecentMatches, getProfileStats } from "./userService";
 
@@ -336,7 +334,7 @@ export async function submitMatchResult(input: SubmitMatchResultInput): Promise<
     }
 
     // The submitter only proposes a result. Stats change only after the opponent confirms it.
-    debugLog("[matchService] submit match result rpc payload", {
+    debugLog("[matchService] submit match result function payload", {
       matchId: input.matchId,
       userId: input.submittedByProfileId,
       submittedByProfileId: input.submittedByProfileId,
@@ -346,34 +344,23 @@ export async function submitMatchResult(input: SubmitMatchResultInput): Promise<
       resultNotes: input.resultNotes ?? null
     });
 
-    const { data: rpcData, error: rpcError } = await supabase.rpc("submit_match_result", {
-      target_match_id: input.matchId,
-      submitter_profile_id_param: input.submittedByProfileId,
-      winner_profile_id_param: input.winnerProfileId,
-      loser_profile_id_param: input.loserProfileId,
-      score_summary_param: input.scoreSummary ?? null,
-      result_notes_param: input.resultNotes ?? null
+    const response = await invokeLoopTwoMatchFunction<{
+      match?: { id: string; resultStatus: "pending_confirmation"; submittedAt: string | null; waitingForOpponent: true };
+    }>("submit-match-result", {
+      matchId: input.matchId,
+      winnerProfileId: input.winnerProfileId,
+      scoreSummary: input.scoreSummary ?? undefined,
+      resultNotes: input.resultNotes ?? undefined
     });
 
-    debugLog("[matchService] submit match result rpc response", {
+    debugLog("[matchService] submit match result function response", {
       matchId: input.matchId,
       userId: input.submittedByProfileId,
-      hasMatch: Boolean(rpcData),
-      rpcError: rpcError ? getSafeErrorPayload(rpcError) : null
+      hasMatch: Boolean(response.match)
     });
 
-    if (rpcError) {
-      console.error("[matchService] submit match result rpc failed", {
-        matchId: input.matchId,
-        submittedByProfileId: input.submittedByProfileId,
-        error: rpcError,
-        safeError: getSafeErrorPayload(rpcError)
-      });
-      throw rpcError;
-    }
-
-    if (!rpcData) {
-      throw new Error(`No match was returned for id ${input.matchId}.`);
+    if (!response.match) {
+      throw new Error("Match service returned no submitted match.");
     }
 
     const { data, error } = await supabase
@@ -478,31 +465,15 @@ export async function confirmMatchResult(
     }
 
     // Trust model: one player submits, the other player confirms before stats can count.
-    const { data: rpcData, error: rpcError } = await supabase.rpc("confirm_match_result", {
-      match_id: matchId,
-      confirmer_profile_id: confirmedByProfileId
-    });
+    const response = await invokeLoopTwoMatchFunction<{
+      match?: { id: string; resultStatus: "confirmed"; confirmedAt: string | null };
+    }>("confirm-match-result", { matchId });
 
-    debugLog("[matchService] confirm match result rpc response", {
+    debugLog("[matchService] confirm match result function response", {
       matchId,
       confirmedByProfileId,
-      dataReturned: rpcData !== null && rpcData !== undefined,
-      rpcData,
-      rpcError: rpcError ? getSafeErrorPayload(rpcError) : null
+      hasMatch: Boolean(response.match)
     });
-
-    if (rpcError) {
-      throw rpcError;
-    }
-
-    // Rating is a deferred legacy feature; the live DB no longer reliably supports the
-    // old rating path, so match confirmation must stay successful even if this fails.
-    // Revisit only when rating is intentionally restored in both schema and UI.
-    try {
-      await applyMatchRatingUpdate(matchId);
-    } catch (ratingError) {
-      debugError("[matchService] rating update skipped", ratingError, { matchId });
-    }
 
     const { data, error } = await supabase
       .from("matches")
@@ -531,49 +502,9 @@ export async function confirmMatchResult(
       console.error("[matchService] confirm result persistence check failed", {
         matchId,
         confirmedByProfileId,
-        rpcData,
         reloadedMatch: confirmedMatchRow
       });
       throw persistenceError;
-    }
-
-    const actorProfileId = confirmedMatchRow.winner_profile_id;
-    const targetProfileId = confirmedMatchRow.loser_profile_id;
-    const actorDisplayName =
-      actorProfileId === currentMatch.challengerProfileId
-        ? currentMatch.challengerName
-        : currentMatch.opponentName;
-    const opponentDisplayName =
-      targetProfileId === currentMatch.challengerProfileId
-        ? currentMatch.challengerName
-        : currentMatch.opponentName;
-
-    if (actorProfileId) {
-      try {
-        const metadata: Json = {
-          actor_display_name: actorDisplayName,
-          opponent_display_name: opponentDisplayName,
-          target_display_name: opponentDisplayName,
-          sport_name: confirmedMatchRow.sports?.name,
-          score: confirmedMatchRow.score_summary,
-          location: confirmedMatchRow.location_name,
-          challenge_location: confirmedMatchRow.location_name
-        };
-
-        await createActivityEvent({
-          actorProfileId,
-          targetProfileId,
-          challengeId: confirmedMatchRow.challenge_id,
-          matchId: confirmedMatchRow.id,
-          sportId: confirmedMatchRow.sports?.id ?? null,
-          eventType: "match_completed",
-          metadata
-        });
-      } catch (activityError) {
-        debugError("Failed to log match completed activity", activityError, {
-          matchId: confirmedMatchRow.id
-        });
-      }
     }
 
     return mapMatch(confirmedMatchRow);
@@ -615,21 +546,15 @@ export async function rejectMatchResult(
       throw new Error("The submitting player cannot reject their own result.");
     }
 
-    const { data: rpcData, error: rpcError } = await supabase.rpc("reject_match_result", {
-      target_match_id: matchId,
-      rejecting_profile_id: rejectedByProfileId
-    });
+    const response = await invokeLoopTwoMatchFunction<{
+      match?: { id: string; resultStatus: "disputed" };
+    }>("reject-match-result", { matchId });
 
-    debugLog("[matchService] reject match result rpc response", {
+    debugLog("[matchService] reject match result function response", {
       matchId,
       rejectedByProfileId,
-      dataReturned: rpcData !== null && rpcData !== undefined,
-      rpcError: rpcError ? getSafeErrorPayload(rpcError) : null
+      hasMatch: Boolean(response.match)
     });
-
-    if (rpcError) {
-      throw rpcError;
-    }
 
     const { data, error } = await supabase
       .from("matches")
