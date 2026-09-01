@@ -110,23 +110,82 @@ Deno.serve(async (request) => {
     const supabaseAdmin = createSupabaseAdmin();
 
     if (request.method === "GET") {
-      const { data: profile, error: profileError } = await supabaseAdmin
+      const { data: linkedProfile, error: linkedProfileError } = await supabaseAdmin
         .from("profiles")
         .select(getProfileSelect())
         .eq("auth_user_id", authUserId)
         .maybeSingle();
 
-      if (profileError) {
+      if (linkedProfileError) {
         console.error("[upsert-profile] profile lookup failed", {
           authUserId,
-          error: profileError
+          error: linkedProfileError
         });
-        return jsonResponse(500, { error: profileError.message });
+        return jsonResponse(500, { error: linkedProfileError.message });
+      }
+
+      if (linkedProfile) {
+        return jsonResponse(200, {
+          success: true,
+          profile: linkedProfile
+        });
+      }
+
+      const email = sanitizeString(authUser.email);
+      if (!email || !authUser.email_confirmed_at) {
+        return jsonResponse(200, { success: true, profile: null });
+      }
+
+      const { data: emailProfile, error: emailProfileError } = await supabaseAdmin
+        .from("profiles")
+        .select("id, auth_user_id")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (emailProfileError) {
+        console.error("[upsert-profile] email profile lookup failed", {
+          authUserId,
+          error: emailProfileError
+        });
+        return jsonResponse(
+          emailProfileError.code === "PGRST116" ? 409 : 500,
+          { error: emailProfileError.code === "PGRST116" ? "Multiple profiles match this email." : emailProfileError.message }
+        );
+      }
+
+      if (!emailProfile) {
+        return jsonResponse(200, { success: true, profile: null });
+      }
+
+      if (emailProfile.auth_user_id && emailProfile.auth_user_id !== authUserId) {
+        return jsonResponse(409, { error: "That email is already linked to another account." });
+      }
+
+      const { data: claimedProfile, error: claimError } = await supabaseAdmin
+        .from("profiles")
+        .update({ auth_user_id: authUserId })
+        .eq("id", emailProfile.id)
+        .eq("email", email)
+        .is("auth_user_id", null)
+        .select(getProfileSelect())
+        .maybeSingle();
+
+      if (claimError) {
+        console.error("[upsert-profile] profile claim failed", {
+          authUserId,
+          profileId: emailProfile.id,
+          error: claimError
+        });
+        return jsonResponse(409, { error: "Unable to claim the existing profile." });
+      }
+
+      if (!claimedProfile) {
+        return jsonResponse(409, { error: "Unable to claim the existing profile." });
       }
 
       return jsonResponse(200, {
         success: true,
-        profile
+        profile: claimedProfile
       });
     }
 
@@ -161,9 +220,20 @@ Deno.serve(async (request) => {
       onboarding_completed: requestBody.onboardingCompleted ?? false
     };
 
-    const { data: existingProfile } = email
+    const { data: existingProfile, error: existingProfileError } = email
       ? await supabaseAdmin.from("profiles").select("id, auth_user_id").eq("email", email).maybeSingle()
-      : { data: null };
+      : { data: null, error: null };
+
+    if (existingProfileError) {
+      console.error("[upsert-profile] existing email profile lookup failed", {
+        authUserId,
+        error: existingProfileError
+      });
+      return jsonResponse(
+        existingProfileError.code === "PGRST116" ? 409 : 500,
+        { error: existingProfileError.code === "PGRST116" ? "Multiple profiles match this email." : existingProfileError.message }
+      );
+    }
 
     if (existingProfile?.auth_user_id && existingProfile.auth_user_id !== authUserId) {
       return jsonResponse(409, { error: "That email is already linked to another account." });
