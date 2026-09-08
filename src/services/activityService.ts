@@ -77,6 +77,7 @@ export function formatActivityFeedItem(event: ActivityEvent, currentProfileId?: 
   const actorDisplayName = metadata.actor_display_name ?? "Player";
   const targetDisplayName = metadata.target_display_name ?? "Player";
   const opponentDisplayName = metadata.opponent_display_name ?? targetDisplayName;
+  const resultOutcome = metadata.result_outcome;
   const sportLabel =
     metadata.sport_name ?? (event.sport ? event.sport.charAt(0).toUpperCase() + event.sport.slice(1) : undefined);
 
@@ -87,6 +88,19 @@ export function formatActivityFeedItem(event: ActivityEvent, currentProfileId?: 
     message = `${actorDisplayName} challenged ${targetDisplayName}${sportLabel ? ` in ${sportLabel}` : ""}`;
   } else if (event.eventType === "challenge_accepted") {
     message = `${actorDisplayName} accepted a challenge${sportLabel ? ` in ${sportLabel}` : ""}`;
+  } else if (resultOutcome === "draw") {
+    const isViewerActor = Boolean(currentProfileId) && event.actorProfileId === currentProfileId;
+    const isViewerTarget = Boolean(currentProfileId) && event.targetProfileId === currentProfileId;
+
+    if (isViewerActor) {
+      title = "Draw";
+      message = `You drew with ${targetDisplayName}${sportLabel ? ` in ${sportLabel}` : ""}`;
+    } else if (isViewerTarget) {
+      title = "Draw";
+      message = `You drew with ${actorDisplayName}${sportLabel ? ` in ${sportLabel}` : ""}`;
+    } else {
+      message = `${actorDisplayName} drew with ${targetDisplayName}${sportLabel ? ` in ${sportLabel}` : ""}`;
+    }
   } else {
     const isViewerWinner = Boolean(currentProfileId) && event.actorProfileId === currentProfileId;
     const isViewerLoser = Boolean(currentProfileId) && event.targetProfileId === currentProfileId;

@@ -237,6 +237,7 @@ export type Database = {
           result_notes: string | null;
           result_confirmation_deadline_at: string | null;
           result_confirmation_method: string | null;
+          result_outcome: Database["public"]["Enums"]["match_result_outcome"] | null;
           result_status: Database["public"]["Enums"]["match_result_status"];
           score_summary: string | null;
           sport_id: number;
@@ -262,6 +263,7 @@ export type Database = {
           result_notes?: string | null;
           result_confirmation_deadline_at?: string | null;
           result_confirmation_method?: string | null;
+          result_outcome?: Database["public"]["Enums"]["match_result_outcome"] | null;
           result_status?: Database["public"]["Enums"]["match_result_status"];
           score_summary?: string | null;
           sport_id: number;
@@ -287,6 +289,7 @@ export type Database = {
           result_notes?: string | null;
           result_confirmation_deadline_at?: string | null;
           result_confirmation_method?: string | null;
+          result_outcome?: Database["public"]["Enums"]["match_result_outcome"] | null;
           result_status?: Database["public"]["Enums"]["match_result_status"];
           score_summary?: string | null;
           sport_id?: number;
@@ -428,6 +431,7 @@ export type Database = {
       profile_stats: {
         Row: {
           created_at: string;
+          draws: number;
           losses: number;
           matches_played: number;
           profile_id: string;
@@ -436,6 +440,7 @@ export type Database = {
         };
         Insert: {
           created_at?: string;
+          draws?: number;
           losses?: number;
           matches_played?: number;
           profile_id: string;
@@ -444,6 +449,7 @@ export type Database = {
         };
         Update: {
           created_at?: string;
+          draws?: number;
           losses?: number;
           matches_played?: number;
           profile_id?: string;
@@ -621,6 +627,17 @@ export type Database = {
         };
         Returns: Database["public"]["Tables"]["matches"]["Row"];
       };
+      submit_match_result_v2: {
+        Args: {
+          result_notes_param?: string | null;
+          result_outcome_param: Database["public"]["Enums"]["match_result_outcome"];
+          score_summary_param?: string | null;
+          submitter_profile_id_param: string;
+          target_match_id: string;
+          winner_profile_id_param?: string | null;
+        };
+        Returns: Database["public"]["Tables"]["matches"]["Row"];
+      };
       insert_activity_event: {
         Args: {
           actor_profile_id_param: string;
@@ -666,6 +683,7 @@ export type Database = {
     Enums: {
       challenge_status: "pending" | "accepted" | "declined" | "completed" | "canceled";
       challenge_type: "casual" | "practice" | "ranked";
+      match_result_outcome: "win" | "draw";
       match_result_status:
         | "pending_submission"
         | "pending_confirmation"

@@ -39,14 +39,21 @@ Deno.serve(async (request) => {
     const authUserId = await getAuthenticatedUserId(request);
 
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-    if (!body || Object.keys(body).some((key) => !["matchId", "winnerProfileId", "scoreSummary", "resultNotes"].includes(key))) {
+    if (!body || Object.keys(body).some((key) => !["matchId", "winnerProfileId", "resultOutcome", "scoreSummary", "resultNotes"].includes(key))) {
       return jsonResponse(400, { error: "Unsupported result submission fields" });
     }
 
     const matchId = typeof body.matchId === "string" ? body.matchId.trim() : "";
-    const winnerProfileId = typeof body.winnerProfileId === "string" ? body.winnerProfileId.trim() : "";
-    if (!uuidPattern.test(matchId) || !uuidPattern.test(winnerProfileId)) {
+    const resultOutcome = body.resultOutcome === undefined ? "win" : body.resultOutcome;
+    const winnerProfileId = typeof body.winnerProfileId === "string" ? body.winnerProfileId.trim() : null;
+    if (!uuidPattern.test(matchId) || (resultOutcome !== "win" && resultOutcome !== "draw")) {
       return jsonResponse(400, { error: "Invalid match result identifiers" });
+    }
+    if (resultOutcome === "win" && (!winnerProfileId || !uuidPattern.test(winnerProfileId))) {
+      return jsonResponse(400, { error: "A winning result requires a valid winner" });
+    }
+    if (resultOutcome === "draw" && body.winnerProfileId !== undefined) {
+      return jsonResponse(400, { error: "A draw result cannot include a winner" });
     }
     if (body.scoreSummary !== undefined && typeof body.scoreSummary !== "string") {
       return jsonResponse(400, { error: "Invalid score summary" });
@@ -88,18 +95,15 @@ Deno.serve(async (request) => {
     if (match.result_status !== "pending_submission") {
       return jsonResponse(409, { error: "Match result is no longer pending" });
     }
-    if (![match.challenger_profile_id, match.opponent_profile_id].includes(winnerProfileId)) {
+    if (resultOutcome === "win" && ![match.challenger_profile_id, match.opponent_profile_id].includes(winnerProfileId as string)) {
       return jsonResponse(400, { error: "Winner must be a match participant" });
     }
 
-    const loserProfileId = winnerProfileId === match.challenger_profile_id
-      ? match.opponent_profile_id
-      : match.challenger_profile_id;
-    const { data: submittedMatch, error: rpcError } = await supabaseAdmin.rpc("submit_match_result", {
+    const { data: submittedMatch, error: rpcError } = await supabaseAdmin.rpc("submit_match_result_v2", {
       target_match_id: match.id,
       submitter_profile_id_param: caller.id,
+      result_outcome_param: resultOutcome,
       winner_profile_id_param: winnerProfileId,
-      loser_profile_id_param: loserProfileId,
       score_summary_param: scoreSummary || null,
       result_notes_param: resultNotes || null
     });
@@ -112,11 +116,12 @@ Deno.serve(async (request) => {
     }
     if (!submittedMatch) return jsonResponse(500, { error: "Unable to submit match result" });
 
-    const result = submittedMatch as { id: string; result_status: string; submitted_at: string | null };
+    const result = submittedMatch as { id: string; result_status: string; result_outcome: "win" | "draw"; submitted_at: string | null };
     return jsonResponse(200, {
       match: {
         id: result.id,
         resultStatus: result.result_status,
+        resultOutcome: result.result_outcome,
         submittedAt: result.submitted_at,
         waitingForOpponent: true
       }

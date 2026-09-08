@@ -16,8 +16,9 @@ type ChallengeStatus = Database["public"]["Enums"]["challenge_status"];
 export type SubmitMatchResultInput = {
   matchId: string;
   submittedByProfileId: string;
-  winnerProfileId: string;
-  loserProfileId: string;
+  resultOutcome?: "win" | "draw";
+  winnerProfileId?: string;
+  loserProfileId?: string;
   scoreSummary?: string | null;
   resultNotes?: string | null;
 };
@@ -88,6 +89,7 @@ export type LoopTwoMatch = {
   confirmedAt: string | null;
   waitingForOpponent: boolean;
   waitingForCurrentUser: boolean;
+  resultOutcome: "win" | "draw" | null;
 };
 
 type LoopTwoMatchFunctionResponse = {
@@ -141,14 +143,35 @@ export async function getUserMatch(matchId: string): Promise<LoopTwoMatch> {
   return response.match;
 }
 
-export async function submitLoopTwoMatchResult(input: {
-  matchId: string;
-  winnerProfileId: string;
-  scoreSummary?: string;
-}): Promise<{ id: string; resultStatus: "pending_confirmation"; submittedAt: string | null; waitingForOpponent: true }> {
+type SubmitLoopTwoMatchResultInput =
+  | {
+      matchId: string;
+      resultOutcome?: "win";
+      winnerProfileId: string;
+      scoreSummary?: string;
+      resultNotes?: string;
+    }
+  | {
+      matchId: string;
+      resultOutcome: "draw";
+      winnerProfileId?: never;
+      scoreSummary?: string;
+      resultNotes?: string;
+    };
+
+export async function submitLoopTwoMatchResult(
+  input: SubmitLoopTwoMatchResultInput
+): Promise<{ id: string; resultStatus: "pending_confirmation"; resultOutcome: "win" | "draw"; submittedAt: string | null; waitingForOpponent: true }> {
+  const resultOutcome = input.resultOutcome ?? "win";
   const response = await invokeLoopTwoMatchFunction<{
-    match?: { id: string; resultStatus: "pending_confirmation"; submittedAt: string | null; waitingForOpponent: true };
-  }>("submit-match-result", input);
+    match?: { id: string; resultStatus: "pending_confirmation"; resultOutcome: "win" | "draw"; submittedAt: string | null; waitingForOpponent: true };
+  }>("submit-match-result", {
+    matchId: input.matchId,
+    resultOutcome,
+    ...(resultOutcome === "win" ? { winnerProfileId: input.winnerProfileId } : {}),
+    scoreSummary: input.scoreSummary,
+    resultNotes: input.resultNotes
+  });
   if (!response.match) {
     throw new Error("Match service returned no submitted match.");
   }
@@ -234,6 +257,7 @@ function mapMatch(row: MatchRowWithSport): Match {
     locationName: row.location_name,
     playedAt: row.played_at ?? row.created_at,
     resultStatus: row.result_status,
+    resultOutcome: row.result_outcome ?? undefined,
     submittedByProfileId: row.submitted_by_profile_id ?? undefined,
     confirmedByProfileId: row.confirmed_by_profile_id ?? undefined,
     winnerProfileId: row.winner_profile_id ?? undefined,
@@ -273,8 +297,6 @@ async function getParticipantNames(challengerProfileId: string, opponentProfileI
 export async function getMatchForSubmission(matchId: string): Promise<MatchForSubmission> {
   debugLog("[matchService] loading match for submission", { matchId });
 
-  await autoConfirmOverdueMatchResults();
-
   const { data, error } = await supabase
     .from("matches")
     .select("*, sports(*), challenges!inner(id, status, stake_type, stake_label, stake_note)")
@@ -303,9 +325,11 @@ export async function getMatchForConfirmation(matchId: string): Promise<MatchFor
 
 export async function submitMatchResult(input: SubmitMatchResultInput): Promise<Match> {
   try {
+    const resultOutcome = input.resultOutcome ?? "win";
     debugLog("[matchService] submitting match result", {
       matchId: input.matchId,
       submittedByProfileId: input.submittedByProfileId,
+      resultOutcome,
       winnerProfileId: input.winnerProfileId,
       loserProfileId: input.loserProfileId
     });
@@ -325,12 +349,18 @@ export async function submitMatchResult(input: SubmitMatchResultInput): Promise<
       throw new Error("Only challenge participants can submit a result.");
     }
 
-    if (!participantIds.includes(input.winnerProfileId) || !participantIds.includes(input.loserProfileId)) {
-      throw new Error("Winner and loser must be challenge participants.");
-    }
+    if (resultOutcome === "win") {
+      if (!input.winnerProfileId || !input.loserProfileId) {
+        throw new Error("Choose a winner and loser before submitting.");
+      }
 
-    if (input.winnerProfileId === input.loserProfileId) {
-      throw new Error("Winner and loser cannot be the same player.");
+      if (!participantIds.includes(input.winnerProfileId) || !participantIds.includes(input.loserProfileId)) {
+        throw new Error("Winner and loser must be challenge participants.");
+      }
+
+      if (input.winnerProfileId === input.loserProfileId) {
+        throw new Error("Winner and loser cannot be the same player.");
+      }
     }
 
     // The submitter only proposes a result. Stats change only after the opponent confirms it.
@@ -338,6 +368,7 @@ export async function submitMatchResult(input: SubmitMatchResultInput): Promise<
       matchId: input.matchId,
       userId: input.submittedByProfileId,
       submittedByProfileId: input.submittedByProfileId,
+      resultOutcome,
       winnerProfileId: input.winnerProfileId,
       loserProfileId: input.loserProfileId,
       scoreSummary: input.scoreSummary ?? null,
@@ -348,7 +379,8 @@ export async function submitMatchResult(input: SubmitMatchResultInput): Promise<
       match?: { id: string; resultStatus: "pending_confirmation"; submittedAt: string | null; waitingForOpponent: true };
     }>("submit-match-result", {
       matchId: input.matchId,
-      winnerProfileId: input.winnerProfileId,
+      resultOutcome,
+      ...(resultOutcome === "win" ? { winnerProfileId: input.winnerProfileId } : {}),
       scoreSummary: input.scoreSummary ?? undefined,
       resultNotes: input.resultNotes ?? undefined
     });
@@ -592,8 +624,6 @@ export async function rejectMatchResult(
 export { getProfileStats };
 export async function getMatchesForProfile(profileId: string): Promise<Match[]> {
   debugLog("[matchService] loading matches for profile", { profileId });
-
-  await autoConfirmOverdueMatchResults(profileId);
 
   // MVP note: per-player match volume is still small enough to load in one query.
   // Add cursor pagination here before expanding match history significantly.

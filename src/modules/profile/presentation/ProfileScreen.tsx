@@ -32,13 +32,19 @@ import { getDiagnosticErrorMessage } from "@/shared/lib/serviceError";
 
 type Props = BottomTabScreenProps<MainTabParamList, "Profile">;
 
+function getRecentMatchResultLabel(result: RecentMatch["result"]) {
+  if (result === "draw") return "Draw";
+  return result === "win" ? "Win" : "Loss";
+}
+
 export function ProfileScreen({ navigation }: Props) {
   const { currentUser, logout, isHydratingProfile } = useAppState();
   const isFocused = useIsFocused();
   const appNavigation = navigation.getParent<NativeStackNavigationProp<AppStackParamList>>();
-  const [stats, setStats] = useState<Pick<Profile, "wins" | "losses" | "matchesPlayed">>({
+  const [stats, setStats] = useState<Pick<Profile, "wins" | "losses" | "draws" | "matchesPlayed">>({
     wins: 0,
     losses: 0,
+    draws: 0,
     matchesPlayed: 0
   });
   const [recentMatches, setRecentMatches] = useState<RecentMatch[]>([]);
@@ -87,14 +93,16 @@ export function ProfileScreen({ navigation }: Props) {
       profileId: currentUser.id,
       wins: currentUser.wins,
       losses: currentUser.losses,
+      draws: currentUser.draws,
       matchesPlayed: currentUser.matchesPlayed
     });
     setStats({
       wins: currentUser.wins,
       losses: currentUser.losses,
+      draws: currentUser.draws,
       matchesPlayed: currentUser.matchesPlayed
     });
-  }, [currentUser?.id, currentUser?.wins, currentUser?.losses, currentUser?.matchesPlayed]);
+  }, [currentUser?.draws, currentUser?.id, currentUser?.losses, currentUser?.matchesPlayed, currentUser?.wins]);
 
   useEffect(() => {
     let isActive = true;
@@ -103,7 +111,7 @@ export function ProfileScreen({ navigation }: Props) {
       if (!currentUser?.id) {
         if (isActive) {
           setLoading(false);
-          setStats({ wins: 0, losses: 0, matchesPlayed: 0 });
+          setStats({ wins: 0, losses: 0, draws: 0, matchesPlayed: 0 });
           setRecentMatches([]);
         }
         return;
@@ -131,6 +139,7 @@ export function ProfileScreen({ navigation }: Props) {
           profileId: currentUser.id,
           wins: nextStats.wins,
           losses: nextStats.losses,
+          draws: nextStats.draws,
           matchesPlayed: nextStats.matchesPlayed,
           recentMatchCount: nextRecentMatches.length,
           rivalryCount: nextRivalries.length
@@ -148,7 +157,7 @@ export function ProfileScreen({ navigation }: Props) {
             ? loadError.message
             : "Unable to load profile data right now."
         );
-        setStats({ wins: 0, losses: 0, matchesPlayed: 0 });
+        setStats({ wins: 0, losses: 0, draws: 0, matchesPlayed: 0 });
         setRecentMatches([]);
         setTopRivalries([]);
       } finally {
@@ -447,9 +456,15 @@ export function ProfileScreen({ navigation }: Props) {
             </Text>
           </View>
           <View style={styles.statCard}>
+            <Text style={styles.statValue}>{stats.draws}</Text>
+            <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit>
+              DRAWS
+            </Text>
+          </View>
+          <View style={styles.statCard}>
             <Text style={styles.statValue}>{stats.matchesPlayed}</Text>
             <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit>
-              MATCHES
+              MATCHES PLAYED
             </Text>
           </View>
         </View>
@@ -515,7 +530,7 @@ export function ProfileScreen({ navigation }: Props) {
                   {match.sport} vs {match.opponentName}
                 </Text>
                 <Text style={styles.rowMeta}>
-                  {match.scoreSummary} · {match.result}
+                  {match.scoreSummary} · {getRecentMatchResultLabel(match.result)}
                 </Text>
                 <Text style={styles.rowMeta}>{formatDateTime(match.date)}</Text>
                 {rivalry ? (
@@ -559,12 +574,14 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     justifyContent: "space-between"
   },
   statCard: {
     flex: 1,
-    minWidth: 92,
+    flexBasis: "40%",
+    minWidth: 120,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: spacing.sm,

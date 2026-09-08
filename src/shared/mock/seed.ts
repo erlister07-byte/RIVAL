@@ -26,6 +26,7 @@ export const nearbySeedProfiles: Profile[] = [
     playStyleTags: ["competitive", "plays_for_coffee"],
     wins: 14,
     losses: 7,
+    draws: 0,
     matchesPlayed: 21
   },
   {
@@ -41,6 +42,7 @@ export const nearbySeedProfiles: Profile[] = [
     playStyleTags: ["casual", "beginner_friendly"],
     wins: 22,
     losses: 11,
+    draws: 0,
     matchesPlayed: 33
   },
   {
@@ -56,6 +58,7 @@ export const nearbySeedProfiles: Profile[] = [
     playStyleTags: ["bragging_rights"],
     wins: 9,
     losses: 10,
+    draws: 0,
     matchesPlayed: 19
   }
 ];

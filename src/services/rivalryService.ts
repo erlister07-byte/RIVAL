@@ -26,15 +26,25 @@ function buildRivalryRecord(
 
   const wins = orderedRows.filter((row) => row.winner_profile_id === currentProfileId).length;
   const losses = orderedRows.filter((row) => row.loser_profile_id === currentProfileId).length;
+  const draws = orderedRows.filter((row) => row.result_outcome === "draw").length;
   const latestRow = orderedRows[0];
+  const latestResult = latestRow?.result_outcome === "draw"
+    ? "draw"
+    : latestRow?.winner_profile_id === currentProfileId
+      ? "win"
+      : latestRow
+        ? "loss"
+        : undefined;
 
   return {
     opponentProfileId,
     opponentDisplayName,
     wins,
     losses,
+    draws,
     totalMatches: orderedRows.length,
     latestWinnerProfileId: latestRow?.winner_profile_id ?? undefined,
+    latestResult,
     latestMatchAt: latestRow?.confirmed_at ?? latestRow?.updated_at ?? undefined,
     sportId: latestRow?.sport_id ?? undefined,
     sportName: latestRow?.sports?.name ?? undefined
@@ -42,7 +52,7 @@ function buildRivalryRecord(
 }
 
 export function formatRivalrySummary(record: RivalryRecord) {
-  return `${record.wins}-${record.losses}`;
+  return `${record.wins}-${record.losses}-${record.draws}`;
 }
 
 export async function getHeadToHeadRecord(

@@ -38,6 +38,7 @@ type LoopOneNearbyPlayerResponse = {
   sports: Profile["sports"];
   wins: number;
   losses: number;
+  draws?: number;
   matchesPlayed: number;
   distanceKm: number;
 };
@@ -169,6 +170,7 @@ export async function getLoopOneNearbyPlayers({
 
   return payload.players.map((player) => ({
     ...player,
+    draws: player.draws ?? 0,
     email: "",
     challengeRadiusKm: 0,
     onboardingCompleted: true,

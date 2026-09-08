@@ -342,6 +342,7 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
               : [],
         wins: 0,
         losses: 0,
+        draws: 0,
         matchesPlayed: 0,
         playStyleTags: [],
         distanceKm: 0

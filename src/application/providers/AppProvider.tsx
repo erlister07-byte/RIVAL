@@ -65,8 +65,9 @@ type ChallengeInput = {
 
 type ResultInput = {
   matchId: string;
-  winnerProfileId: string;
-  loserProfileId: string;
+  resultOutcome?: "win" | "draw";
+  winnerProfileId?: string;
+  loserProfileId?: string;
   scoreSummary?: string;
   resultNotes?: string;
 };
@@ -188,6 +189,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ...previous,
             wins: nextStats.wins,
             losses: nextStats.losses,
+            draws: nextStats.draws,
             matchesPlayed: nextStats.matchesPlayed
           }
         : previous
@@ -272,6 +274,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     ...previous,
                     wins: stats.wins,
                     losses: stats.losses,
+                    draws: stats.draws,
                     matchesPlayed: stats.matchesPlayed
                   }
                 : previous
@@ -537,6 +540,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...profile,
       wins: stats.wins,
       losses: stats.losses,
+      draws: stats.draws,
       matchesPlayed: stats.matchesPlayed
     });
     setRecentMatches(await getRecentMatches(profile.id));
@@ -662,6 +666,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     debugLog("[AppProvider] submitResult called", {
       currentUserProfileId: currentUser.id,
       matchId: input.matchId,
+      resultOutcome: input.resultOutcome ?? "win",
       winnerProfileId: input.winnerProfileId,
       loserProfileId: input.loserProfileId
     });
@@ -670,6 +675,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const submittedMatch = await submitMatchResult({
         matchId: input.matchId,
         submittedByProfileId: currentUser.id,
+        resultOutcome: input.resultOutcome,
         winnerProfileId: input.winnerProfileId,
         loserProfileId: input.loserProfileId,
         scoreSummary: input.scoreSummary ?? null,
@@ -742,6 +748,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentUserProfileId: currentUser.id,
         wins: stats.wins,
         losses: stats.losses,
+        draws: stats.draws,
         matchesPlayed: stats.matchesPlayed
       });
       setCurrentUser((previous) =>
@@ -750,6 +757,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               ...previous,
               wins: stats.wins,
               losses: stats.losses,
+              draws: stats.draws,
               matchesPlayed: stats.matchesPlayed
             }
           : previous

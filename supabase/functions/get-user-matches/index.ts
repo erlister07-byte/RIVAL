@@ -19,6 +19,7 @@ type MatchRow = Record<string, unknown> & {
   location_name: string;
   played_at: string | null;
   result_status: "pending_submission" | "pending_confirmation" | "confirmed" | "disputed";
+  result_outcome: "win" | "draw" | null;
   winner_profile_id: string | null;
   score_summary: string | null;
   submitted_at: string | null;
@@ -81,6 +82,7 @@ function matchResponse(match: MatchRow, callerProfileId: string) {
     },
     callerIsChallenger,
     resultStatus: match.result_status,
+    resultOutcome: match.result_outcome,
     winnerProfileId: match.winner_profile_id,
     scoreSummary: match.score_summary,
     submittedAt: match.submitted_at,
@@ -119,7 +121,7 @@ Deno.serve(async (request) => {
 
     let query = supabaseAdmin
       .from("matches")
-      .select("id, challenge_id, challenger_profile_id, opponent_profile_id, location_name, played_at, result_status, winner_profile_id, score_summary, submitted_at, confirmed_at, submitted_by_profile_id, sports!inner(slug), challenges!inner(status, is_open), challenger:profiles!matches_challenger_profile_id_fkey(id, display_name), opponent:profiles!matches_opponent_profile_id_fkey(id, display_name)")
+      .select("id, challenge_id, challenger_profile_id, opponent_profile_id, location_name, played_at, result_status, result_outcome, winner_profile_id, score_summary, submitted_at, confirmed_at, submitted_by_profile_id, sports!inner(slug), challenges!inner(status, is_open), challenger:profiles!matches_challenger_profile_id_fkey(id, display_name), opponent:profiles!matches_opponent_profile_id_fkey(id, display_name)")
       .or(`challenger_profile_id.eq.${caller.id},opponent_profile_id.eq.${caller.id}`)
       .in("challenges.status", ["accepted", "completed"])
       .eq("challenges.is_open", false)

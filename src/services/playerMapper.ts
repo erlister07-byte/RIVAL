@@ -5,11 +5,13 @@ type JoinedProfileStats =
   | {
       wins?: number | null;
       losses?: number | null;
+      draws?: number | null;
       matches_played?: number | null;
     }
   | Array<{
       wins?: number | null;
       losses?: number | null;
+      draws?: number | null;
       matches_played?: number | null;
     }>
   | null
@@ -43,6 +45,7 @@ export function mapPlayerSummary(row: PlayerSummaryRow): PlayerSummary {
     playStyleTags: normalizePlayStyleTags(row.play_style_tags),
     wins: stats?.wins ?? 0,
     losses: stats?.losses ?? 0,
+    draws: stats?.draws ?? 0,
     matchesPlayed: stats?.matches_played ?? 0
   };
 }

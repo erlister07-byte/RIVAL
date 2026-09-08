@@ -9,7 +9,7 @@ import { AppStackParamList, MainTabParamList } from "@/application/navigation/ty
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
 import { DEFAULT_LAUNCH_SPORT, getSportIdBySlug } from "@/config/sports";
-import { getStakeOutcomeCopy } from "@/core/types/models";
+import { getStakeOutcomeCopy, RecentMatch } from "@/core/types/models";
 import { isActionableResultMatch, subscribeToMatchActivity } from "@/services/matchService";
 import { SuggestedOpponent, getSuggestedOpponents } from "@/services/playerService";
 import { subscribeToChallengeActivity } from "@/services/challengeService";
@@ -40,6 +40,16 @@ function getReadableSkillMatchLabel(skillLevel?: string) {
     default:
       return "Good skill match";
   }
+}
+
+function getLatestResultLead(match: RecentMatch) {
+  if (match.result === "draw") return `You drew with ${match.opponentName}`;
+  return `${match.result === "win" ? "You beat" : "You lost to"} ${match.opponentName}`;
+}
+
+function getRematchResultCopy(match: RecentMatch) {
+  if (match.result === "draw") return "You drew last time";
+  return match.result === "win" ? "You won last time" : "They won last time";
 }
 
 export function HomeScreen({ navigation }: Props) {
@@ -167,7 +177,7 @@ export function HomeScreen({ navigation }: Props) {
         <Card style={styles.recentResultCard}>
           <Text style={styles.kicker}>Latest Result</Text>
           <Text style={styles.recentResultTitle}>
-            {latestConfirmedResult.result === "win" ? "You beat" : "You lost to"} {latestConfirmedResult.opponentName} —{" "}
+            {getLatestResultLead(latestConfirmedResult)} —{" "}
             {getStakeOutcomeCopy({
               result: latestConfirmedResult.result,
               stakeType: latestConfirmedResult.stakeType,
@@ -177,6 +187,17 @@ export function HomeScreen({ navigation }: Props) {
           <Text style={styles.recentResultMeta}>
             {latestConfirmedResult.sport} · {latestConfirmedResult.scoreSummary} · {formatDateTime(latestConfirmedResult.date)}
           </Text>
+        </Card>
+      ) : null}
+
+      {resultActions.length > 0 ? (
+        <Card>
+          <Text style={styles.kicker}>Needs Your Attention</Text>
+          <Text style={styles.cardTitle}>
+            {resultActions.length === 1 ? "A match needs a result action" : `${resultActions.length} matches need result actions`}
+          </Text>
+          <Text style={styles.cardText}>Submit or review a result to keep the match moving.</Text>
+          <Button label="Open Match Results" onPress={() => navigation.navigate("ResultsInbox")} />
         </Card>
       ) : null}
 
@@ -262,7 +283,7 @@ export function HomeScreen({ navigation }: Props) {
                 username={match.opponentName}
                 displayName={match.opponentName}
                 sportLabel={match.sport}
-                reason={`${match.result === "win" ? "You won last time" : "They won last time"} · ${match.scoreSummary}`}
+                reason={`${getRematchResultCopy(match)} · ${match.scoreSummary}`}
                 actionLabel="Rematch"
                 onPress={() =>
                   navigation.navigate("CreateChallenge", {

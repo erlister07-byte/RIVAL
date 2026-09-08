@@ -136,7 +136,7 @@ function getProfileSelect(includeAvailabilityStatus = true, includePlayStyleTags
         is_active,
         sports (id, slug, name)
       ),
-      profile_stats (profile_id, wins, losses, matches_played)
+      profile_stats (profile_id, wins, losses, draws, matches_played)
     `;
 }
 
@@ -360,14 +360,14 @@ export async function getUserProfile({
 export async function getPlayerById(profileId: string): Promise<PlayerSummary | null> {
   let { data, error } = await supabase
     .from("profiles")
-    .select("id, username, display_name, play_style_tags, profile_stats(profile_id, wins, losses)")
+    .select("id, username, display_name, play_style_tags, profile_stats(profile_id, wins, losses, draws, matches_played)")
     .eq("id", profileId)
     .maybeSingle();
 
   if (error && isMissingPlayStyleTagsColumnError(error)) {
     ({ data, error } = await supabase
       .from("profiles")
-      .select("id, username, display_name, profile_stats(profile_id, wins, losses)")
+      .select("id, username, display_name, profile_stats(profile_id, wins, losses, draws, matches_played)")
       .eq("id", profileId)
       .maybeSingle());
   }
@@ -507,10 +507,10 @@ export async function searchProfilesByUsername(
   return results;
 }
 
-export async function getProfileStats(profileId: string): Promise<Pick<Profile, "wins" | "losses" | "matchesPlayed">> {
+export async function getProfileStats(profileId: string): Promise<Pick<Profile, "wins" | "losses" | "draws" | "matchesPlayed">> {
   const { data, error } = await supabase
     .from("profile_stats")
-    .select("wins, losses, matches_played")
+    .select("wins, losses, draws, matches_played")
     .eq("profile_id", profileId)
     .maybeSingle();
 
@@ -521,6 +521,7 @@ export async function getProfileStats(profileId: string): Promise<Pick<Profile, 
   return {
     wins: data?.wins ?? 0,
     losses: data?.losses ?? 0,
+    draws: data?.draws ?? 0,
     matchesPlayed: data?.matches_played ?? 0
   };
 }
@@ -582,7 +583,7 @@ export async function getRecentMatches(profileId: string): Promise<RecentMatch[]
       opponentProfileId: opponentId,
       opponentName: opponentNameById.get(opponentId) ?? "Opponent",
       scoreSummary: row.score_summary ?? "Confirmed result",
-      result: row.winner_profile_id === profileId ? "win" : "loss",
+      result: row.result_outcome === "draw" ? "draw" : row.winner_profile_id === profileId ? "win" : "loss",
       date: row.confirmed_at ?? row.updated_at,
       stakeType: row.challenges?.stake_type ?? undefined,
       stakeLabel: row.challenges?.stake_label ?? undefined,

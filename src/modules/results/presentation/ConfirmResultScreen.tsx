@@ -177,6 +177,7 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
 
   const resolvedMatch = match;
   const resolvedCurrentUser = currentUser;
+  const isDraw = resolvedMatch.resultOutcome === "draw";
 
   const winnerName =
     resolvedMatch.winnerProfileId === resolvedMatch.challengerProfileId
@@ -194,7 +195,11 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
     resolvedCurrentUser.id === resolvedMatch.challengerProfileId
       ? resolvedMatch.opponentName
       : resolvedMatch.challengerName;
-  const confirmedResultDirection = resolvedMatch.winnerProfileId === resolvedCurrentUser.id ? "win" : "loss";
+  const confirmedResultDirection = isDraw
+    ? "draw"
+    : resolvedMatch.winnerProfileId === resolvedCurrentUser.id
+      ? "win"
+      : "loss";
   const confirmedStakeOutcome = getStakeOutcomeCopy({
     result: confirmedResultDirection,
     stakeType: resolvedMatch.stakeType,
@@ -208,7 +213,14 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
 
     try {
       await confirmResult(resolvedMatch.id);
-      showSuccess(confirmedResultDirection === "win" ? "Win confirmed" : "Loss confirmed", confirmedStakeOutcome);
+      showSuccess(
+        confirmedResultDirection === "draw"
+          ? "Draw confirmed"
+          : confirmedResultDirection === "win"
+            ? "Win confirmed"
+            : "Loss confirmed",
+        confirmedStakeOutcome
+      );
       setResolvedState("confirmed");
     } catch (actionError) {
       debugError("[ConfirmResultScreen] confirm result failed", actionError, {
@@ -243,12 +255,13 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
           <Text style={styles.sectionTitle}>Match Recorded</Text>
           <Text style={styles.helperText}>
             {currentUser
-              ? `You're now ${currentUser.wins}–${currentUser.losses}.`
+              ? `You're now ${currentUser.wins}–${currentUser.losses}–${currentUser.draws}.`
               : "Your match has been confirmed."}
           </Text>
           <View style={styles.statsRow}>
             <StatPill label="Wins" value={currentUser?.wins ?? 0} />
             <StatPill label="Losses" value={currentUser?.losses ?? 0} />
+            <StatPill label="Draws" value={currentUser?.draws ?? 0} />
             <StatPill label="Played" value={currentUser?.matchesPlayed ?? 0} />
           </View>
           <Text style={styles.successSummary}>
@@ -312,12 +325,16 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
         {success ? <SuccessBanner title={success.title} hint={success.hint} onDismiss={clearSuccess} /> : null}
         <ResolvedStateCard
           title="Result rejected"
-          description="This result is now disputed. Wait for the match state to change before taking another action here."
+          description={isDraw
+            ? "This Draw proposal is now disputed. Wait for the match state to change before taking another action here."
+            : "This result is now disputed. Wait for the match state to change before taking another action here."}
         />
         <Card>
           <Text style={styles.sectionTitle}>Result Rejected</Text>
           <Text style={styles.helperText}>
-            The submitted result was rejected and is no longer ready for confirmation.
+            {isDraw
+              ? "The submitted Draw proposal was rejected and is no longer ready for confirmation."
+              : "The submitted result was rejected and is no longer ready for confirmation."}
           </Text>
           <Text style={styles.successSummary}>
             Next step: coordinate with the other player, then refresh this match when the result state changes.
@@ -338,10 +355,19 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
         <Text style={styles.deadlineText}>
           Awaiting your response · {formatResultConfirmationDeadline(resolvedMatch.resultConfirmationDeadlineAt)}
         </Text>
-        <Text style={styles.label}>Winner</Text>
-        <Text style={styles.value}>{winnerName}</Text>
-        <Text style={styles.label}>Loser</Text>
-        <Text style={styles.value}>{loserName}</Text>
+        {isDraw ? (
+          <>
+            <Text style={styles.label}>Result</Text>
+            <Text style={styles.value}>Draw</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.label}>Winner</Text>
+            <Text style={styles.value}>{winnerName}</Text>
+            <Text style={styles.label}>Loser</Text>
+            <Text style={styles.value}>{loserName}</Text>
+          </>
+        )}
         <Text style={styles.label}>Score</Text>
         <Text style={styles.value}>{resolvedMatch.scoreSummary ?? "No score submitted"}</Text>
         <Text style={styles.label}>Notes</Text>
@@ -371,7 +397,7 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
         />
       </Card>
       <Button
-        label="Confirm & Update Stats"
+        label={isDraw ? "Confirm Draw & Update Stats" : "Confirm & Update Stats"}
         onPress={handleConfirm}
         loading={actionLoading === "confirm"}
         disabled={Boolean(actionLoading)}

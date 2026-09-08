@@ -5,6 +5,8 @@ export type ChallengeStatus = "pending" | "accepted" | "declined" | "completed" 
 export type ChallengeType = "casual" | "practice" | "ranked";
 export type MatchFormat = "singles" | "doubles";
 export type MatchResultStatus = "pending_submission" | "pending_confirmation" | "confirmed" | "disputed";
+export type MatchResultOutcome = "win" | "draw";
+export type PlayerMatchResult = "win" | "loss" | "draw";
 export type ActivityEventType = "challenge_created" | "challenge_accepted" | "match_completed";
 export type PlayStyleTag =
   | "competitive"
@@ -87,13 +89,17 @@ export function getStakeOutcomeCopy({
   stakeType,
   stakeLabel
 }: {
-  result: "win" | "loss";
+  result: PlayerMatchResult;
   stakeType?: string | null;
   stakeLabel?: string | null;
 }) {
   const label = getStakeLabel(stakeLabel);
   const icon = getStakeIcon(stakeType);
   const normalizedStakeType = stakeType ?? "bragging_rights";
+
+  if (result === "draw") {
+    return "Draw recorded";
+  }
 
   if (result === "win") {
     switch (normalizedStakeType) {
@@ -144,6 +150,7 @@ export type PlayerSummary = {
   displayName: string;
   wins: number;
   losses: number;
+  draws: number;
   matchesPlayed: number;
   availabilityStatus: AvailabilityStatus;
   playStyleTags: PlayStyleTag[];
@@ -243,6 +250,7 @@ export type Match = {
   locationName: string;
   playedAt: string;
   resultStatus: MatchResultStatus;
+  resultOutcome?: MatchResultOutcome;
   submittedByProfileId?: string;
   confirmedByProfileId?: string;
   winnerProfileId?: string;
@@ -263,7 +271,7 @@ export type RecentMatch = {
   opponentProfileId: string;
   opponentName: string;
   scoreSummary: string;
-  result: "win" | "loss";
+  result: PlayerMatchResult;
   date: string;
   stakeType?: string;
   stakeLabel?: string;
@@ -275,8 +283,10 @@ export type RivalryRecord = {
   opponentDisplayName: string;
   wins: number;
   losses: number;
+  draws: number;
   totalMatches: number;
   latestWinnerProfileId?: string;
+  latestResult?: PlayerMatchResult;
   latestMatchAt?: string;
   sportId?: number;
   sportName?: string;

@@ -6,7 +6,12 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { AppStackParamList } from "@/application/navigation/types";
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
-import { MatchForSubmission, getMatchForSubmission, subscribeToMatchActivity } from "@/services/matchService";
+import {
+  MatchForSubmission,
+  getMatchForSubmission,
+  submitLoopTwoMatchResult,
+  subscribeToMatchActivity
+} from "@/services/matchService";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
 import { Chip } from "@/shared/components/Chip";
@@ -23,11 +28,12 @@ import { Screen } from "@/shared/components/Screen";
 type Props = NativeStackScreenProps<AppStackParamList, "MatchResultSubmission">;
 
 export function MatchResultSubmissionScreen({ navigation, route }: Props) {
-  const { currentUser, submitResult } = useAppState();
+  const { currentUser } = useAppState();
   const isFocused = useIsFocused();
   const [match, setMatch] = useState<MatchForSubmission | null>(null);
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [resultOutcome, setResultOutcome] = useState<"win" | "draw">("win");
   const [winnerId, setWinnerId] = useState(currentUser?.id ?? "");
   const [scoreSummary, setScoreSummary] = useState("");
   const [notes, setNotes] = useState("");
@@ -64,6 +70,7 @@ export function MatchResultSubmissionScreen({ navigation, route }: Props) {
         setMatch(nextMatch);
         setScoreSummary(nextMatch.scoreSummary ?? "");
         setNotes(nextMatch.resultNotes ?? "");
+        setResultOutcome(nextMatch.resultOutcome ?? "win");
         setWinnerId(currentUser?.id ?? nextMatch.challengerProfileId);
       } catch (error) {
         if (!isActive) {
@@ -120,6 +127,7 @@ export function MatchResultSubmissionScreen({ navigation, route }: Props) {
       void getMatchForSubmission(route.params.matchId)
         .then((nextMatch) => {
           setMatch(nextMatch);
+          setResultOutcome(nextMatch.resultOutcome ?? "win");
           setWinnerId((currentWinnerId) =>
             currentWinnerId && [nextMatch.challengerProfileId, nextMatch.opponentProfileId].includes(currentWinnerId)
               ? currentWinnerId
@@ -218,7 +226,7 @@ export function MatchResultSubmissionScreen({ navigation, route }: Props) {
   const resolvedCurrentUser = currentUser;
 
   async function handleSubmit() {
-    if (!winnerId || !loserId) {
+    if (resultOutcome === "win" && (!winnerId || !loserId)) {
       setSubmitError("Choose a winner before submitting.");
       return;
     }
@@ -227,6 +235,7 @@ export function MatchResultSubmissionScreen({ navigation, route }: Props) {
       matchId: resolvedMatch.id,
       currentUserId: resolvedCurrentUser.id,
       submittedByProfileId: resolvedCurrentUser.id,
+      resultOutcome,
       winnerProfileId: winnerId,
       loserProfileId: loserId,
       challengeStatus: resolvedMatch.challengeStatus,
@@ -235,6 +244,7 @@ export function MatchResultSubmissionScreen({ navigation, route }: Props) {
     debugLog("[MatchResultSubmissionScreen] submit tapped", {
       matchId: resolvedMatch.id,
       currentUserId: resolvedCurrentUser.id,
+      resultOutcome,
       winnerId,
       loserId
     });
@@ -249,21 +259,26 @@ export function MatchResultSubmissionScreen({ navigation, route }: Props) {
         navigateBackTimeoutRef.current = null;
       }
 
-      const submittedMatch = await submitResult({
-        matchId: resolvedMatch.id,
-        winnerProfileId: winnerId,
-        loserProfileId: loserId,
-        scoreSummary: scoreSummary.trim() || undefined,
-        resultNotes: notes.trim() || undefined
-      });
+      const submittedMatch = resultOutcome === "draw"
+        ? await submitLoopTwoMatchResult({
+            matchId: resolvedMatch.id,
+            resultOutcome: "draw",
+            scoreSummary: scoreSummary.trim() || undefined,
+            resultNotes: notes.trim() || undefined
+          })
+        : await submitLoopTwoMatchResult({
+            matchId: resolvedMatch.id,
+            resultOutcome: "win",
+            winnerProfileId: winnerId,
+            scoreSummary: scoreSummary.trim() || undefined,
+            resultNotes: notes.trim() || undefined
+          });
       console.log("[MatchResultSubmissionScreen] submit succeeded", {
         matchId: submittedMatch.id,
         resultStatus: submittedMatch.resultStatus,
-        submittedByProfileId: submittedMatch.submittedByProfileId,
-        winnerProfileId: submittedMatch.winnerProfileId,
-        loserProfileId: submittedMatch.loserProfileId
+        resultOutcome: submittedMatch.resultOutcome
       });
-      showSuccess("Result submitted", "Waiting for opponent confirmation.");
+      showSuccess(resultOutcome === "draw" ? "Draw submitted" : "Result submitted", "Waiting for opponent confirmation.");
       navigateBackTimeoutRef.current = setTimeout(() => {
         navigation.goBack();
         navigateBackTimeoutRef.current = null;
@@ -279,6 +294,7 @@ export function MatchResultSubmissionScreen({ navigation, route }: Props) {
       console.error("[MatchResultSubmissionScreen] submit failed", {
         matchId: resolvedMatch.id,
         currentUserId: resolvedCurrentUser.id,
+        resultOutcome,
         winnerId,
         loserId,
         error,
@@ -287,6 +303,7 @@ export function MatchResultSubmissionScreen({ navigation, route }: Props) {
       debugError("[MatchResultSubmissionScreen] submit result failed", error, {
         matchId: resolvedMatch.id,
         currentUserId: resolvedCurrentUser.id,
+        resultOutcome,
         winnerId,
         loserId
       });
@@ -315,20 +332,33 @@ export function MatchResultSubmissionScreen({ navigation, route }: Props) {
       ) : null}
       <Card>
         <Text style={styles.sectionTitle}>Record Match Result</Text>
-        <Text style={styles.helperText}>Submit the winner now. Your opponent will confirm it next.</Text>
-        <Text style={styles.label}>Winner</Text>
+        <Text style={styles.helperText}>
+          {resultOutcome === "draw"
+            ? "Submit a draw now. Your opponent will confirm it next."
+            : "Submit the winner now. Your opponent will confirm it next."}
+        </Text>
+        <Text style={styles.label}>Result</Text>
         <View style={styles.wrap}>
-          <Chip
-            label="You"
-            selected={winnerId === currentUser.id}
-            onPress={() => setWinnerId(currentUser.id)}
-          />
-          <Chip
-            label={opponentName}
-            selected={winnerId === participantOpponentId}
-            onPress={() => setWinnerId(participantOpponentId ?? "")}
-          />
+          <Chip label="Win" selected={resultOutcome === "win"} onPress={() => setResultOutcome("win")} />
+          <Chip label="Draw" selected={resultOutcome === "draw"} onPress={() => setResultOutcome("draw")} />
         </View>
+        {resultOutcome === "win" ? (
+          <>
+            <Text style={styles.label}>Winner</Text>
+            <View style={styles.wrap}>
+              <Chip
+                label="You"
+                selected={winnerId === currentUser.id}
+                onPress={() => setWinnerId(currentUser.id)}
+              />
+              <Chip
+                label={opponentName}
+                selected={winnerId === participantOpponentId}
+                onPress={() => setWinnerId(participantOpponentId ?? "")}
+              />
+            </View>
+          </>
+        ) : null}
       </Card>
       <Input label="Score" value={scoreSummary} onChangeText={setScoreSummary} placeholder="6-4, 6-3 or 21 - 18" />
       <Input label="Notes" value={notes} onChangeText={setNotes} placeholder="Optional match notes" />

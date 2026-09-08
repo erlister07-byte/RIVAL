@@ -272,9 +272,12 @@ export function ResultsInboxScreen({ navigation }: Props) {
               {challenge ? ` · Stakes: ${getStakeDisplay(challenge.stakeType, challenge.stakeLabel)}` : ""}
             </Text>
             {match.resultStatus === "pending_confirmation" ? (
-              <Text style={styles.deadlineText}>
-                Awaiting opponent response · {formatResultConfirmationDeadline(match.resultConfirmationDeadlineAt)}
-              </Text>
+              <>
+                {match.resultOutcome === "draw" ? <Text style={styles.statusText}>Proposed result: Draw</Text> : null}
+                <Text style={styles.deadlineText}>
+                  Awaiting opponent response · {formatResultConfirmationDeadline(match.resultConfirmationDeadlineAt)}
+                </Text>
+              </>
             ) : null}
 
             <Button

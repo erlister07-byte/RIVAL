@@ -23,6 +23,6 @@ export type ChallengeService = {
 export type MatchService = {
   submitMatchResult: (...args: never[]) => Promise<Match>;
   confirmMatchResult: (...args: never[]) => Promise<Match>;
-  getProfileStats: (...args: never[]) => Promise<Pick<Profile, "wins" | "losses" | "matchesPlayed">>;
+  getProfileStats: (...args: never[]) => Promise<Pick<Profile, "wins" | "losses" | "draws" | "matchesPlayed">>;
   getRecentMatches: (...args: never[]) => Promise<RecentMatch[]>;
 };

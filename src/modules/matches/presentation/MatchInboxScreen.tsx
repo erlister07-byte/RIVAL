@@ -26,6 +26,10 @@ function getWinnerName(match: LoopTwoMatch) {
   return "Not recorded";
 }
 
+function getResultSummary(match: LoopTwoMatch) {
+  return match.resultOutcome === "draw" ? "Draw" : `Winner: ${getWinnerName(match)}`;
+}
+
 export function LoopTwoMatchInboxScreen({ navigation }: Props) {
   const isFocused = useIsFocused();
   const [matches, setMatches] = useState<LoopTwoMatch[]>([]);
@@ -114,14 +118,18 @@ export function LoopTwoMatchInboxScreen({ navigation }: Props) {
           ) : match.resultStatus === "confirmed" ? (
             <View style={styles.actions}>
               <Text style={styles.status}>Result Confirmed</Text>
-              <Text style={styles.meta}>Winner: {getWinnerName(match)}</Text>
+              <Text style={styles.meta}>{getResultSummary(match)}</Text>
               {match.scoreSummary ? <Text style={styles.meta}>Score: {match.scoreSummary}</Text> : null}
             </View>
           ) : match.resultStatus === "disputed" ? (
             <View style={styles.actions}>
               <Text style={styles.status}>Result Disputed</Text>
-              <Text style={styles.meta}>The submitted result was disputed.</Text>
-              <Text style={styles.meta}>Winner: {getWinnerName(match)}</Text>
+              <Text style={styles.meta}>
+                {match.resultOutcome === "draw"
+                  ? "The submitted Draw proposal was disputed."
+                  : "The submitted result was disputed."}
+              </Text>
+              <Text style={styles.meta}>{getResultSummary(match)}</Text>
               {match.scoreSummary ? <Text style={styles.meta}>Score: {match.scoreSummary}</Text> : null}
             </View>
           ) : (
@@ -130,7 +138,7 @@ export function LoopTwoMatchInboxScreen({ navigation }: Props) {
               <Text style={styles.meta}>
                 {match.waitingForOpponent ? "Waiting for opponent confirmation." : "Review the submitted result."}
               </Text>
-              <Text style={styles.meta}>Winner: {getWinnerName(match)}</Text>
+              <Text style={styles.meta}>{getResultSummary(match)}</Text>
               {match.scoreSummary ? <Text style={styles.meta}>Score: {match.scoreSummary}</Text> : null}
               {match.waitingForCurrentUser ? (
                 <>
