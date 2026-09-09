@@ -1,36 +1,25 @@
 import { RivalryRecord } from "@/core/types/models";
-import { Database } from "@/types/database";
-
-import { supabase } from "./supabaseClient";
-
-type MatchRow = Database["public"]["Tables"]["matches"]["Row"];
-type SportRow = Database["public"]["Tables"]["sports"]["Row"];
-
-type ConfirmedMatchRow = MatchRow & {
-  sports: SportRow | null;
-};
-
-type OpponentProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "display_name">;
+import { getUserMatches, LoopTwoMatch } from "./matchService";
 
 function buildRivalryRecord(
   currentProfileId: string,
   opponentProfileId: string,
   opponentDisplayName: string,
-  rows: ConfirmedMatchRow[]
+  rows: LoopTwoMatch[]
 ): RivalryRecord {
   const orderedRows = [...rows].sort((left, right) => {
-    const leftTime = new Date(left.confirmed_at ?? left.updated_at).getTime();
-    const rightTime = new Date(right.confirmed_at ?? right.updated_at).getTime();
+    const leftTime = new Date(left.confirmedAt ?? left.updatedAt ?? left.scheduledAt ?? 0).getTime();
+    const rightTime = new Date(right.confirmedAt ?? right.updatedAt ?? right.scheduledAt ?? 0).getTime();
     return rightTime - leftTime;
   });
 
-  const wins = orderedRows.filter((row) => row.winner_profile_id === currentProfileId).length;
-  const losses = orderedRows.filter((row) => row.loser_profile_id === currentProfileId).length;
-  const draws = orderedRows.filter((row) => row.result_outcome === "draw").length;
+  const wins = orderedRows.filter((row) => row.winnerProfileId === currentProfileId).length;
+  const losses = orderedRows.filter((row) => row.loserProfileId === currentProfileId).length;
+  const draws = orderedRows.filter((row) => row.resultOutcome === "draw").length;
   const latestRow = orderedRows[0];
-  const latestResult = latestRow?.result_outcome === "draw"
+  const latestResult = latestRow?.resultOutcome === "draw"
     ? "draw"
-    : latestRow?.winner_profile_id === currentProfileId
+    : latestRow?.winnerProfileId === currentProfileId
       ? "win"
       : latestRow
         ? "loss"
@@ -43,11 +32,11 @@ function buildRivalryRecord(
     losses,
     draws,
     totalMatches: orderedRows.length,
-    latestWinnerProfileId: latestRow?.winner_profile_id ?? undefined,
+    latestWinnerProfileId: latestRow?.winnerProfileId ?? undefined,
     latestResult,
-    latestMatchAt: latestRow?.confirmed_at ?? latestRow?.updated_at ?? undefined,
-    sportId: latestRow?.sport_id ?? undefined,
-    sportName: latestRow?.sports?.name ?? undefined
+    latestMatchAt: latestRow?.confirmedAt ?? latestRow?.updatedAt ?? latestRow?.scheduledAt ?? undefined,
+    sportId: latestRow?.sportId ?? undefined,
+    sportName: latestRow?.sportName ?? undefined
   };
 }
 
@@ -60,44 +49,22 @@ export async function getHeadToHeadRecord(
   opponentProfileId: string,
   sportId?: string
 ): Promise<RivalryRecord | null> {
-  let query = supabase
-    .from("matches")
-    .select("*, sports(*)")
-    .eq("result_status", "confirmed")
-    .or(
-      `and(challenger_profile_id.eq.${currentProfileId},opponent_profile_id.eq.${opponentProfileId}),and(challenger_profile_id.eq.${opponentProfileId},opponent_profile_id.eq.${currentProfileId})`
-    );
-
-  if (sportId) {
-    query = query.eq("sport_id", Number(sportId));
-  }
-
-  const { data, error } = await query.order("confirmed_at", { ascending: false });
-
-  if (error) {
-    throw error;
-  }
-
-  const rows = (data ?? []) as ConfirmedMatchRow[];
+  const rows = (await getUserMatches()).filter(
+    (match) =>
+      match.resultStatus === "confirmed" &&
+      (match.challenger.profileId === currentProfileId || match.opponent.profileId === currentProfileId) &&
+      match.counterpart.profileId === opponentProfileId &&
+      (!sportId || match.sportId === Number(sportId))
+  );
 
   if (rows.length === 0) {
     return null;
   }
 
-  const { data: opponentData, error: opponentError } = await supabase
-    .from("profiles")
-    .select("id, display_name")
-    .eq("id", opponentProfileId)
-    .maybeSingle<OpponentProfileRow>();
-
-  if (opponentError) {
-    throw opponentError;
-  }
-
   return buildRivalryRecord(
     currentProfileId,
     opponentProfileId,
-    opponentData?.display_name ?? "Opponent",
+    rows[0]?.counterpart.displayName?.trim() || rows[0]?.counterpart.username?.trim() || "Opponent",
     rows
   );
 }
@@ -106,53 +73,35 @@ export async function getTopRivalries(
   currentProfileId: string,
   limit = 5
 ): Promise<RivalryRecord[]> {
-  const { data, error } = await supabase
-    .from("matches")
-    .select("*, sports(*)")
-    .eq("result_status", "confirmed")
-    .or(`challenger_profile_id.eq.${currentProfileId},opponent_profile_id.eq.${currentProfileId}`)
-    .order("confirmed_at", { ascending: false });
-
-  if (error) {
-    throw error;
-  }
-
-  const rows = (data ?? []) as ConfirmedMatchRow[];
+  const rows = (await getUserMatches()).filter(
+    (match) =>
+      match.resultStatus === "confirmed" &&
+      (match.challenger.profileId === currentProfileId || match.opponent.profileId === currentProfileId)
+  );
 
   if (rows.length === 0) {
     return [];
   }
 
-  const groupedRows = new Map<string, ConfirmedMatchRow[]>();
+  const groupedRows = new Map<string, LoopTwoMatch[]>();
 
   for (const row of rows) {
-    const opponentProfileId =
-      row.challenger_profile_id === currentProfileId ? row.opponent_profile_id : row.challenger_profile_id;
+    const opponentProfileId = row.counterpart.profileId;
     const existingRows = groupedRows.get(opponentProfileId) ?? [];
     existingRows.push(row);
     groupedRows.set(opponentProfileId, existingRows);
   }
 
   const opponentIds = Array.from(groupedRows.keys());
-  const { data: opponents, error: opponentsError } = await supabase
-    .from("profiles")
-    .select("id, display_name")
-    .in("id", opponentIds);
-
-  if (opponentsError) {
-    throw opponentsError;
-  }
-
-  const opponentNameById = new Map(
-    ((opponents ?? []) as OpponentProfileRow[]).map((opponent) => [opponent.id, opponent.display_name])
-  );
 
   return opponentIds
     .map((opponentProfileId) =>
       buildRivalryRecord(
         currentProfileId,
         opponentProfileId,
-        opponentNameById.get(opponentProfileId) ?? "Opponent",
+        groupedRows.get(opponentProfileId)?.[0]?.counterpart.displayName?.trim() ||
+          groupedRows.get(opponentProfileId)?.[0]?.counterpart.username?.trim() ||
+          "Opponent",
         groupedRows.get(opponentProfileId) ?? []
       )
     )

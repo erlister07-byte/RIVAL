@@ -1,6 +1,5 @@
-import { AvailabilityStatus, PlayStyleTag, PlayerSummary, Profile, RecentMatch, normalizePlayStyleTags } from "@/core/types/models";
+import { AvailabilityStatus, PlayStyleTag, PlayerSummary, Profile, normalizePlayStyleTags } from "@/core/types/models";
 import { Database } from "@/types/database";
-import { DEFAULT_LAUNCH_SPORT } from "@/config/sports";
 import { isMissingColumnError, withOptionalFieldFallback } from "@/shared/lib/schemaDrift";
 import { debugLog } from "@/shared/lib/logger";
 
@@ -527,70 +526,4 @@ export async function getProfileStats(profileId: string): Promise<Pick<Profile, 
     matchesPlayed: data?.matches_played ?? 0,
     xp: Number.isFinite(data?.xp) ? data?.xp ?? 0 : 0
   };
-}
-
-type RecentMatchRow = Database["public"]["Tables"]["matches"]["Row"] & {
-  sports: SportRow | null;
-  challenges: Pick<
-    Database["public"]["Tables"]["challenges"]["Row"],
-    "stake_type" | "stake_label" | "stake_note"
-  > | null;
-};
-
-export async function getRecentMatches(profileId: string): Promise<RecentMatch[]> {
-  const { data, error } = await supabase
-    .from("matches")
-    .select("*, sports(*), challenges(stake_type, stake_label, stake_note)")
-    .eq("result_status", "confirmed")
-    .or(`challenger_profile_id.eq.${profileId},opponent_profile_id.eq.${profileId}`)
-    .order("confirmed_at", { ascending: false })
-    .limit(5);
-
-  if (error) {
-    throw error;
-  }
-
-  const rows = (data ?? []) as RecentMatchRow[];
-  if (rows.length === 0) {
-    return [];
-  }
-
-  const opponentIds = Array.from(
-    new Set(
-      rows.map((row) =>
-        row.challenger_profile_id === profileId ? row.opponent_profile_id : row.challenger_profile_id
-      )
-    )
-  );
-
-  const { data: opponents, error: opponentsError } = await supabase
-    .from("profiles")
-    .select("id, display_name")
-    .in("id", opponentIds);
-
-  if (opponentsError) {
-    throw opponentsError;
-  }
-
-  const opponentNameById = new Map(
-    (opponents ?? []).map((opponent) => [opponent.id, opponent.display_name])
-  );
-
-  return rows.map((row) => {
-    const opponentId =
-      row.challenger_profile_id === profileId ? row.opponent_profile_id : row.challenger_profile_id;
-
-    return {
-      id: row.id,
-      sport: row.sports?.slug ?? DEFAULT_LAUNCH_SPORT,
-      opponentProfileId: opponentId,
-      opponentName: opponentNameById.get(opponentId) ?? "Opponent",
-      scoreSummary: row.score_summary ?? "Confirmed result",
-      result: row.result_outcome === "draw" ? "draw" : row.winner_profile_id === profileId ? "win" : "loss",
-      date: row.confirmed_at ?? row.updated_at,
-      stakeType: row.challenges?.stake_type ?? undefined,
-      stakeLabel: row.challenges?.stake_label ?? undefined,
-      stakeNote: row.challenges?.stake_note ?? undefined
-    };
-  });
 }

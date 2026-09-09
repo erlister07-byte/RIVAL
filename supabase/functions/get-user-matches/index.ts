@@ -18,17 +18,36 @@ type MatchRow = Record<string, unknown> & {
   opponent_profile_id: string;
   location_name: string;
   played_at: string | null;
+  created_at: string;
+  updated_at: string;
   result_status: "pending_submission" | "pending_confirmation" | "confirmed" | "disputed";
   result_outcome: "win" | "draw" | null;
   winner_profile_id: string | null;
+  loser_profile_id: string | null;
   score_summary: string | null;
+  result_notes: string | null;
   submitted_at: string | null;
   confirmed_at: string | null;
   submitted_by_profile_id: string | null;
-  sports: { slug?: string } | Array<{ slug?: string }> | null;
-  challenges: { status?: string; is_open?: boolean } | Array<{ status?: string; is_open?: boolean }> | null;
-  challenger: { id?: string; display_name?: string } | Array<{ id?: string; display_name?: string }> | null;
-  opponent: { id?: string; display_name?: string } | Array<{ id?: string; display_name?: string }> | null;
+  confirmed_by_profile_id: string | null;
+  result_confirmation_deadline_at: string | null;
+  result_confirmation_method: "manual" | "auto" | null;
+  sports: { id?: number; slug?: string; name?: string } | Array<{ id?: number; slug?: string; name?: string }> | null;
+  challenges: {
+    status?: string;
+    is_open?: boolean;
+    stake_type?: string | null;
+    stake_label?: string | null;
+    stake_note?: string | null;
+  } | Array<{
+    status?: string;
+    is_open?: boolean;
+    stake_type?: string | null;
+    stake_label?: string | null;
+    stake_note?: string | null;
+  }> | null;
+  challenger: { id?: string; username?: string | null; display_name?: string } | Array<{ id?: string; username?: string | null; display_name?: string }> | null;
+  opponent: { id?: string; username?: string | null; display_name?: string } | Array<{ id?: string; username?: string | null; display_name?: string }> | null;
 };
 
 function jsonResponse(status: number, body: Record<string, unknown>) {
@@ -62,31 +81,55 @@ function matchResponse(match: MatchRow, callerProfileId: string) {
   const counterpart = callerIsChallenger ? opponent : challenger;
   const isPendingConfirmation = match.result_status === "pending_confirmation";
 
+  const challengerDisplayName = challenger?.display_name?.trim() || challenger?.username?.trim() || "Player";
+  const challengerUsername = challenger?.username?.trim() || challengerDisplayName;
+  const opponentDisplayName = opponent?.display_name?.trim() || opponent?.username?.trim() || "Opponent";
+  const opponentUsername = opponent?.username?.trim() || opponentDisplayName;
+  const counterpartDisplayName = counterpart?.display_name?.trim() || counterpart?.username?.trim() || "Opponent";
+  const counterpartUsername = counterpart?.username?.trim() || counterpartDisplayName;
+
   return {
     id: match.id,
     challengeId: match.challenge_id,
     sport: sport?.slug ?? "pickleball",
+    sportId: sport?.id ?? null,
+    sportName: sport?.name ?? null,
     scheduledAt: match.played_at,
+    createdAt: match.created_at,
+    updatedAt: match.updated_at,
     locationName: match.location_name,
     challenger: {
       profileId: match.challenger_profile_id,
-      displayName: challenger?.display_name ?? "Player"
+      displayName: challengerDisplayName,
+      username: challengerUsername
     },
     opponent: {
       profileId: match.opponent_profile_id,
-      displayName: opponent?.display_name ?? "Player"
+      displayName: opponentDisplayName,
+      username: opponentUsername
     },
     counterpart: {
       profileId: counterpart?.id ?? (callerIsChallenger ? match.opponent_profile_id : match.challenger_profile_id),
-      displayName: counterpart?.display_name ?? "Player"
+      displayName: counterpartDisplayName,
+      username: counterpartUsername
     },
     callerIsChallenger,
+    challengeStatus: one(match.challenges)?.status ?? null,
     resultStatus: match.result_status,
     resultOutcome: match.result_outcome,
     winnerProfileId: match.winner_profile_id,
+    loserProfileId: match.loser_profile_id,
     scoreSummary: match.score_summary,
+    resultNotes: match.result_notes,
     submittedAt: match.submitted_at,
     confirmedAt: match.confirmed_at,
+    submittedByProfileId: match.submitted_by_profile_id,
+    confirmedByProfileId: match.confirmed_by_profile_id,
+    resultConfirmationDeadlineAt: match.result_confirmation_deadline_at,
+    resultConfirmationMethod: match.result_confirmation_method,
+    stakeType: one(match.challenges)?.stake_type ?? null,
+    stakeLabel: one(match.challenges)?.stake_label ?? null,
+    stakeNote: one(match.challenges)?.stake_note ?? null,
     waitingForOpponent: isPendingConfirmation && match.submitted_by_profile_id === callerProfileId,
     waitingForCurrentUser: isPendingConfirmation && match.submitted_by_profile_id !== callerProfileId
   };
@@ -121,7 +164,7 @@ Deno.serve(async (request) => {
 
     let query = supabaseAdmin
       .from("matches")
-      .select("id, challenge_id, challenger_profile_id, opponent_profile_id, location_name, played_at, result_status, result_outcome, winner_profile_id, score_summary, submitted_at, confirmed_at, submitted_by_profile_id, sports!inner(slug), challenges!inner(status, is_open), challenger:profiles!matches_challenger_profile_id_fkey(id, display_name), opponent:profiles!matches_opponent_profile_id_fkey(id, display_name)")
+      .select("id, challenge_id, challenger_profile_id, opponent_profile_id, location_name, played_at, created_at, updated_at, result_status, result_outcome, winner_profile_id, loser_profile_id, score_summary, result_notes, submitted_at, confirmed_at, submitted_by_profile_id, confirmed_by_profile_id, result_confirmation_deadline_at, result_confirmation_method, sports!inner(id, slug, name), challenges!inner(status, is_open, stake_type, stake_label, stake_note), challenger:profiles!matches_challenger_profile_id_fkey(id, username, display_name), opponent:profiles!matches_opponent_profile_id_fkey(id, username, display_name)")
       .or(`challenger_profile_id.eq.${caller.id},opponent_profile_id.eq.${caller.id}`)
       .in("challenges.status", ["accepted", "completed"])
       .eq("challenges.is_open", false)

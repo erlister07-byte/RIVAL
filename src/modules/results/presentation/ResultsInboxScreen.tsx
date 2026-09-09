@@ -8,7 +8,6 @@ import { AppStackParamList } from "@/application/navigation/types";
 import { colors, spacing, typography } from "@/application/theme";
 import { getChallengeTypeLabel, getStakeDisplay } from "@/core/types/models";
 import { Badge } from "@/components/ui/Badge";
-import { getPlayerById } from "@/services/userService";
 import {
   formatResultConfirmationDeadline,
   getMatchesForProfile,
@@ -29,10 +28,8 @@ type Props = NativeStackScreenProps<AppStackParamList, "ResultsInbox">;
 export function ResultsInboxScreen({ navigation }: Props) {
   const { currentUser, matches, challenges, isHydratingProfile } = useAppState();
   const isFocused = useIsFocused();
-  const [opponentNames, setOpponentNames] = useState<Record<string, string>>({});
   const [liveMatches, setLiveMatches] = useState(matches);
   const [loadingMatches, setLoadingMatches] = useState(false);
-  const [loadingNames, setLoadingNames] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -136,73 +133,20 @@ export function ResultsInboxScreen({ navigation }: Props) {
         .map((match) => {
           const linkedChallenge = challenges.find((challenge) => challenge.id === match.challengeId);
           const isChallenger = match.challengerProfileId === currentUser.id;
-          const opponentId = isChallenger ? match.opponentProfileId : match.challengerProfileId;
+          const opponentName = isChallenger ? match.opponentName : match.challengerName;
           const actionNeeded =
             match.resultStatus === "pending_confirmation" ? "Confirm result" : "Submit result";
 
           return {
             match,
             challenge: linkedChallenge,
-            opponentId,
+            opponentName: opponentName?.trim() || "Opponent",
             actionNeeded
           };
         })
         : [],
     [challenges, currentUser, liveMatches]
   );
-
-  useEffect(() => {
-    let isActive = true;
-
-    async function loadOpponentNames() {
-      const opponentIds = Array.from(new Set(actionableMatches.map((item) => item.opponentId)));
-
-      if (opponentIds.length === 0) {
-        if (isActive) {
-          setOpponentNames({});
-        }
-        return;
-      }
-
-      setLoadingNames(true);
-
-      try {
-        const players = await Promise.all(opponentIds.map((profileId) => getPlayerById(profileId)));
-
-        if (!isActive) {
-          return;
-        }
-
-        setOpponentNames(
-          players.reduce<Record<string, string>>((accumulator, player, index) => {
-            if (player) {
-              accumulator[opponentIds[index]] = player.displayName;
-            }
-
-            return accumulator;
-          }, {})
-        );
-      } catch (error) {
-        debugError("[ResultsInboxScreen] failed to load opponent names", error, {
-          opponentIds
-        });
-
-        if (isActive) {
-          setOpponentNames({});
-        }
-      } finally {
-        if (isActive) {
-          setLoadingNames(false);
-        }
-      }
-    }
-
-    void loadOpponentNames();
-
-    return () => {
-      isActive = false;
-    };
-  }, [actionableMatches]);
 
   return (
     <Screen>
@@ -229,7 +173,7 @@ export function ResultsInboxScreen({ navigation }: Props) {
         />
       </Card>
 
-      {loadingMatches || loadingNames ? (
+      {loadingMatches ? (
         <View style={styles.stateContainer}>
           <ActivityIndicator color={colors.primary} />
           <Text style={styles.helperText}>Loading active matches...</Text>
@@ -243,11 +187,11 @@ export function ResultsInboxScreen({ navigation }: Props) {
           <Button label="Back to Home" tone="secondary" onPress={() => navigation.navigate("Tabs")} />
         </Card>
       ) : (
-        actionableMatches.map(({ match, challenge, opponentId, actionNeeded }) => (
+        actionableMatches.map(({ match, challenge, opponentName, actionNeeded }) => (
           <Card key={match.id}>
             <View style={styles.rowTop}>
               <View style={styles.rowTitleWrap}>
-                <Text style={styles.playerName}>{opponentNames[opponentId] ?? "Opponent"}</Text>
+                <Text style={styles.playerName}>{opponentName}</Text>
                 <Text style={styles.sportMeta}>{match.sport}</Text>
               </View>
               <Badge

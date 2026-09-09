@@ -9,7 +9,7 @@ import type { OrderedWinStreakMatch } from "@/shared/lib/winStreak";
 
 import { getAuthenticatedRequestHeaders } from "./authSession";
 import { supabase } from "./supabaseClient";
-import { getRecentMatches as getUserRecentMatches, getProfileStats } from "./userService";
+import { getProfileStats } from "./userService";
 
 type MatchRow = Database["public"]["Tables"]["matches"]["Row"];
 type SportRow = Database["public"]["Tables"]["sports"]["Row"];
@@ -42,17 +42,6 @@ export type SubmitMatchResultInput = {
 type MatchRowWithSport = MatchRow & {
   sports: SportRow | null;
   challenges?: {
-    stake_type?: string | null;
-    stake_label?: string | null;
-    stake_note?: string | null;
-  } | null;
-};
-
-type MatchRowWithRelations = MatchRowWithSport & {
-  sports: SportRow | null;
-  challenges: {
-    id: string;
-    status: ChallengeStatus;
     stake_type?: string | null;
     stake_label?: string | null;
     stake_note?: string | null;
@@ -94,15 +83,29 @@ export type LoopTwoMatch = {
   sport: string;
   scheduledAt: string | null;
   locationName: string;
-  challenger: { profileId: string; displayName: string };
-  opponent: { profileId: string; displayName: string };
-  counterpart: { profileId: string; displayName: string };
+  sportId?: number | null;
+  sportName?: string | null;
+  challenger: { profileId: string; displayName: string; username?: string };
+  opponent: { profileId: string; displayName: string; username?: string };
+  counterpart: { profileId: string; displayName: string; username?: string };
   callerIsChallenger: boolean;
+  challengeStatus?: ChallengeStatus | null;
+  createdAt?: string;
+  updatedAt?: string;
   resultStatus: "pending_submission" | "pending_confirmation" | "confirmed" | "disputed";
   winnerProfileId: string | null;
+  loserProfileId?: string | null;
   scoreSummary: string | null;
+  resultNotes?: string | null;
   submittedAt: string | null;
   confirmedAt: string | null;
+  submittedByProfileId?: string | null;
+  confirmedByProfileId?: string | null;
+  resultConfirmationDeadlineAt?: string | null;
+  resultConfirmationMethod?: "manual" | "auto" | null;
+  stakeType?: string | null;
+  stakeLabel?: string | null;
+  stakeNote?: string | null;
   waitingForOpponent: boolean;
   waitingForCurrentUser: boolean;
   resultOutcome: "win" | "draw" | null;
@@ -292,46 +295,50 @@ function mapMatch(row: MatchRowWithSport): Match {
   };
 }
 
-async function getParticipantNames(challengerProfileId: string, opponentProfileId: string) {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, display_name")
-    .in("id", [challengerProfileId, opponentProfileId]);
+function getCanonicalIdentityName(identity: { displayName?: string; username?: string }) {
+  return identity.displayName?.trim() || identity.username?.trim() || "Opponent";
+}
 
-  if (error) {
-    throw error;
-  }
-
-  const namesById = new Map((data ?? []).map((profile) => [profile.id, profile.display_name]));
-
+function mapCanonicalMatch(match: LoopTwoMatch): Match {
   return {
-    challengerName: namesById.get(challengerProfileId) ?? "Challenger",
-    opponentName: namesById.get(opponentProfileId) ?? "Opponent"
+    id: match.id,
+    challengeId: match.challengeId,
+    sport: match.sport as Match["sport"],
+    challengerProfileId: match.challenger.profileId,
+    challengerName: getCanonicalIdentityName(match.challenger),
+    challengerUsername: match.challenger.username?.trim() || undefined,
+    opponentProfileId: match.opponent.profileId,
+    opponentName: getCanonicalIdentityName(match.opponent),
+    opponentUsername: match.opponent.username?.trim() || undefined,
+    locationName: match.locationName,
+    playedAt: match.scheduledAt ?? match.createdAt ?? "",
+    resultStatus: match.resultStatus,
+    resultOutcome: match.resultOutcome ?? undefined,
+    submittedByProfileId: match.submittedByProfileId ?? undefined,
+    confirmedByProfileId: match.confirmedByProfileId ?? undefined,
+    winnerProfileId: match.winnerProfileId ?? undefined,
+    loserProfileId: match.loserProfileId ?? undefined,
+    scoreSummary: match.scoreSummary ?? undefined,
+    resultNotes: match.resultNotes ?? undefined,
+    stakeType: match.stakeType ?? undefined,
+    stakeLabel: match.stakeLabel ?? undefined,
+    stakeNote: match.stakeNote ?? undefined,
+    confirmedAt: match.confirmedAt ?? undefined,
+    resultConfirmationDeadlineAt: match.resultConfirmationDeadlineAt ?? undefined,
+    resultConfirmationMethod: match.resultConfirmationMethod ?? undefined
   };
 }
 
 export async function getMatchForSubmission(matchId: string): Promise<MatchForSubmission> {
   debugLog("[matchService] loading match for submission", { matchId });
-
-  const { data, error } = await supabase
-    .from("matches")
-    .select("*, sports(*), challenges!inner(id, status, stake_type, stake_label, stake_note)")
-    .eq("id", matchId)
-    .single();
-
-  if (error) {
-    debugError("[matchService] failed to load match for submission", error, { matchId });
-    throw error;
-  }
-
-  const row = data as MatchRowWithRelations;
-  const names = await getParticipantNames(row.challenger_profile_id, row.opponent_profile_id);
+  const canonicalMatch = await getUserMatch(matchId);
+  const match = mapCanonicalMatch(canonicalMatch);
 
   return {
-    ...mapMatch(row),
-    challengeStatus: row.challenges?.status ?? "pending",
-    challengerName: names.challengerName,
-    opponentName: names.opponentName
+    ...match,
+    challengeStatus: canonicalMatch.challengeStatus ?? "pending",
+    challengerName: match.challengerName ?? "Opponent",
+    opponentName: match.opponentName ?? "Opponent"
   };
 }
 
@@ -640,21 +647,18 @@ export async function rejectMatchResult(
 export { getProfileStats };
 export async function getMatchesForProfile(profileId: string): Promise<Match[]> {
   debugLog("[matchService] loading matches for profile", { profileId });
-
-  // MVP note: per-player match volume is still small enough to load in one query.
-  // Add cursor pagination here before expanding match history significantly.
-  const { data, error } = await supabase
-    .from("matches")
-    .select("*, sports(*)")
-    .or(`challenger_profile_id.eq.${profileId},opponent_profile_id.eq.${profileId}`)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    debugError("[matchService] failed to load matches for profile", error, { profileId });
-    throw error;
-  }
-
-  return ((data ?? []) as MatchRowWithSport[]).map(mapMatch);
+  const matches = await getUserMatches();
+  return matches
+    .filter(
+      (match) =>
+        match.challenger.profileId === profileId || match.opponent.profileId === profileId
+    )
+    .sort((left, right) => {
+      const leftTime = new Date(left.createdAt ?? left.scheduledAt ?? 0).getTime();
+      const rightTime = new Date(right.createdAt ?? right.scheduledAt ?? 0).getTime();
+      return rightTime - leftTime;
+    })
+    .map(mapCanonicalMatch);
 }
 
 export async function getCurrentWinStreakForSport(profileId: string, sportId: number) {
@@ -710,7 +714,32 @@ export async function getCurrentWinStreakForSport(profileId: string, sportId: nu
 }
 
 export async function getRecentMatches(profileId: string): Promise<RecentMatch[]> {
-  return getUserRecentMatches(profileId);
+  const matches = await getUserMatches();
+
+  return matches
+    .filter(
+      (match) =>
+        match.resultStatus === "confirmed" &&
+        (match.challenger.profileId === profileId || match.opponent.profileId === profileId)
+    )
+    .sort((left, right) => {
+      const leftTime = new Date(left.confirmedAt ?? left.updatedAt ?? left.scheduledAt ?? 0).getTime();
+      const rightTime = new Date(right.confirmedAt ?? right.updatedAt ?? right.scheduledAt ?? 0).getTime();
+      return rightTime - leftTime;
+    })
+    .slice(0, 5)
+    .map((match) => ({
+      id: match.id,
+      sport: match.sport as RecentMatch["sport"],
+      opponentProfileId: match.counterpart.profileId,
+      opponentName: getCanonicalIdentityName(match.counterpart),
+      scoreSummary: match.scoreSummary ?? "Confirmed result",
+      result: match.resultOutcome === "draw" ? "draw" : match.winnerProfileId === profileId ? "win" : "loss",
+      date: match.confirmedAt ?? match.updatedAt ?? match.scheduledAt ?? "",
+      stakeType: match.stakeType ?? undefined,
+      stakeLabel: match.stakeLabel ?? undefined,
+      stakeNote: match.stakeNote ?? undefined
+    }));
 }
 
 export function subscribeToMatchActivity(

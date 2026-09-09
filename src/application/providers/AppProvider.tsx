@@ -22,6 +22,7 @@ import {
 import { supabase } from "@/services/supabaseClient";
 import {
   confirmMatchResult,
+  getRecentMatches,
   getMatchesForProfile,
   rejectMatchResult,
   submitMatchResult
@@ -30,7 +31,6 @@ import { NearbyPlayer, getNearbyPlayers } from "@/services/playerService";
 import {
   createUserProfile,
   getCurrentUserProfile,
-  getRecentMatches,
   getProfileStats,
   updateUserProfile
 } from "@/services/userService";

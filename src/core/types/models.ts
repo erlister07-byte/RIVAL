@@ -247,7 +247,11 @@ export type Match = {
   challengeId: string;
   sport: SportSlug;
   challengerProfileId: string;
+  challengerName?: string;
+  challengerUsername?: string;
   opponentProfileId: string;
+  opponentName?: string;
+  opponentUsername?: string;
   locationName: string;
   playedAt: string;
   resultStatus: MatchResultStatus;

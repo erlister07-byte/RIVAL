@@ -16,9 +16,9 @@ import {
   RecentMatch,
   RivalryRecord
 } from "@/core/types/models";
-import { getCurrentWinStreakForSport, subscribeToMatchActivity } from "@/services/matchService";
+import { getCurrentWinStreakForSport, getRecentMatches, subscribeToMatchActivity } from "@/services/matchService";
 import { formatRivalrySummary, getTopRivalries } from "@/services/rivalryService";
-import { getProfileStats, getRecentMatches } from "@/services/userService";
+import { getProfileStats } from "@/services/userService";
 import { uploadProfilePhoto } from "@/services/profilePhotoService";
 import { Avatar } from "@/shared/components/Avatar";
 import { Button } from "@/shared/components/Button";
