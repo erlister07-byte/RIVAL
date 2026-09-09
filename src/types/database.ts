@@ -428,6 +428,52 @@ export type Database = {
           }
         ];
       };
+      profile_xp_ledger: {
+        Row: {
+          amount: number;
+          awarded_at: string;
+          id: number;
+          match_id: string;
+          participant_outcome: string;
+          profile_id: string;
+          reason: string;
+          recorded_at: string;
+        };
+        Insert: {
+          amount: number;
+          awarded_at: string;
+          id?: never;
+          match_id: string;
+          participant_outcome: string;
+          profile_id: string;
+          reason?: string;
+          recorded_at?: string;
+        };
+        Update: {
+          amount?: number;
+          awarded_at?: string;
+          id?: never;
+          match_id?: string;
+          participant_outcome?: string;
+          profile_id?: string;
+          reason?: string;
+          recorded_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "profile_xp_ledger_match_id_fkey";
+            columns: ["match_id"];
+            referencedRelation: "matches";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "profile_xp_ledger_profile_id_fkey";
+            columns: ["profile_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       profile_stats: {
         Row: {
           created_at: string;
@@ -437,6 +483,7 @@ export type Database = {
           profile_id: string;
           updated_at: string;
           wins: number;
+          xp: number;
         };
         Insert: {
           created_at?: string;
@@ -446,6 +493,7 @@ export type Database = {
           profile_id: string;
           updated_at?: string;
           wins?: number;
+          xp?: number;
         };
         Update: {
           created_at?: string;
@@ -455,6 +503,7 @@ export type Database = {
           profile_id?: string;
           updated_at?: string;
           wins?: number;
+          xp?: number;
         };
         Relationships: [
           {
