@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { User } from "@supabase/supabase-js";
+import type { AuthChangeEvent, User } from "@supabase/supabase-js";
 
 import {
   AvailabilityStatus,
@@ -208,26 +208,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
         : "authenticated";
 
   useEffect(() => {
-    async function hydrateSessionUser(nextAuthUser: User | null) {
+    let isActive = true;
+    let hydrationVersion = 0;
+    let activeAuthUserId: string | null = null;
+    let hydratingAuthUserId: string | null = null;
+    let hydratedAuthUserId: string | null = null;
+
+    function clearSessionUser() {
+      hydrationVersion += 1;
+      activeAuthUserId = null;
+      hydratingAuthUserId = null;
+      hydratedAuthUserId = null;
+      setAuthUser(null);
+      setIsAuthenticated(false);
+      setIsHydratingProfile(false);
+      setCurrentUser(null);
+      setNearbyPlayers([]);
+      setChallenges([]);
+      setMatches([]);
+      setRecentMatches([]);
+      setIsBooting(false);
+    }
+
+    async function hydrateSessionUser(nextAuthUser: User) {
+      const nextHydrationVersion = ++hydrationVersion;
+      activeAuthUserId = nextAuthUser.id;
+      hydratingAuthUserId = nextAuthUser.id;
+      hydratedAuthUserId = null;
+
       debugLog("[AppProvider] auth state changed", {
-        authUserId: nextAuthUser?.id ?? null,
-        emailVerified: Boolean(nextAuthUser?.email_confirmed_at)
+        authUserId: nextAuthUser.id,
+        emailVerified: Boolean(nextAuthUser.email_confirmed_at)
       });
 
       setIsBooting(true);
       setAuthUser(nextAuthUser);
-      setIsAuthenticated(Boolean(nextAuthUser));
-
-      if (!nextAuthUser) {
-        setIsHydratingProfile(false);
-        setCurrentUser(null);
-        setNearbyPlayers([]);
-        setChallenges([]);
-        setMatches([]);
-        setRecentMatches([]);
-        setIsBooting(false);
-        return;
-      }
+      setIsAuthenticated(true);
 
       try {
         setIsHydratingProfile(true);
@@ -235,6 +251,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           authUserId: nextAuthUser.id
         });
         const profile = await getCurrentUserProfile();
+
+        if (!isActive || nextHydrationVersion !== hydrationVersion) {
+          return;
+        }
 
         debugLog("[AppProvider] profile lookup completed", {
           authUserId: nextAuthUser.id,
@@ -244,6 +264,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           displayName: profile?.displayName ?? null,
           sportsCount: profile?.sports.length ?? 0
         });
+        hydratedAuthUserId = nextAuthUser.id;
 
         if (!profile) {
           setCurrentUser(null);
@@ -268,6 +289,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
               getRecentMatches(profile.id)
             ]);
 
+            if (!isActive || nextHydrationVersion !== hydrationVersion) {
+              return;
+            }
+
             setCurrentUser((previous) =>
               previous?.id === profile.id
                 ? {
@@ -289,31 +314,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         }
       } catch (error) {
+        if (!isActive || nextHydrationVersion !== hydrationVersion) {
+          return;
+        }
+
         debugError("Failed to load user profile", error);
         setCurrentUser(null);
         setRecentMatches([]);
       } finally {
-        setIsHydratingProfile(false);
-        setIsBooting(false);
+        if (isActive && nextHydrationVersion === hydrationVersion) {
+          hydratingAuthUserId = null;
+          setIsHydratingProfile(false);
+          setIsBooting(false);
+        }
       }
     }
 
-    void supabase.auth.getSession().then(({ data, error }) => {
-      if (error) {
-        debugError("Failed to restore Supabase session", error);
-        setIsBooting(false);
+    function handleAuthStateChange(event: AuthChangeEvent, nextAuthUser: User | null) {
+      switch (event) {
+        case "SIGNED_OUT":
+          clearSessionUser();
+          return;
+        case "INITIAL_SESSION":
+        case "SIGNED_IN":
+        case "TOKEN_REFRESHED":
+        case "USER_UPDATED":
+        case "PASSWORD_RECOVERY":
+        case "MFA_CHALLENGE_VERIFIED":
+          if (!nextAuthUser) {
+            clearSessionUser();
+            return;
+          }
+      }
+
+      const isSameActiveUser = activeAuthUserId === nextAuthUser.id;
+      const isHydratedOrHydrating =
+        hydratedAuthUserId === nextAuthUser.id || hydratingAuthUserId === nextAuthUser.id;
+
+      if (isSameActiveUser && isHydratedOrHydrating) {
+        setAuthUser(nextAuthUser);
+        setIsAuthenticated(true);
         return;
       }
 
-      void hydrateSessionUser(data.session?.user ?? null);
-    });
+      void hydrateSessionUser(nextAuthUser);
+    }
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       // Run profile queries after the auth callback releases Supabase's internal lock.
-      setTimeout(() => void hydrateSessionUser(session?.user ?? null), 0);
+      setTimeout(() => {
+        if (isActive) {
+          handleAuthStateChange(event, session?.user ?? null);
+        }
+      }, 0);
     });
 
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      isActive = false;
+      hydrationVersion += 1;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
