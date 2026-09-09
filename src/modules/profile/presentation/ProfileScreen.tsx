@@ -10,13 +10,13 @@ import { Check, Copy } from "lucide-react-native";
 import { AppStackParamList, MainTabParamList } from "@/application/navigation/types";
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
-import { SPORT_CONFIGS, getSportIdBySlug } from "@/config/sports";
+import { SPORT_CONFIGS, getSportIdBySlug, isSportEnabled } from "@/config/sports";
 import {
   Profile,
   RecentMatch,
   RivalryRecord
 } from "@/core/types/models";
-import { subscribeToMatchActivity } from "@/services/matchService";
+import { getCurrentWinStreakForSport, subscribeToMatchActivity } from "@/services/matchService";
 import { formatRivalrySummary, getTopRivalries } from "@/services/rivalryService";
 import { getProfileStats, getRecentMatches } from "@/services/userService";
 import { uploadProfilePhoto } from "@/services/profilePhotoService";
@@ -38,6 +38,11 @@ function getRecentMatchResultLabel(result: RecentMatch["result"]) {
   return result === "win" ? "Win" : "Loss";
 }
 
+function getWinStreakCopy(streak: number) {
+  if (streak === 0) return "No active streak";
+  return `${streak} ${streak === 1 ? "win" : "wins"}`;
+}
+
 export function ProfileScreen({ navigation }: Props) {
   const { currentUser, logout, isHydratingProfile } = useAppState();
   const isFocused = useIsFocused();
@@ -51,6 +56,9 @@ export function ProfileScreen({ navigation }: Props) {
   });
   const [recentMatches, setRecentMatches] = useState<RecentMatch[]>([]);
   const [topRivalries, setTopRivalries] = useState<RivalryRecord[]>([]);
+  const [currentWinStreak, setCurrentWinStreak] = useState<number | null>(null);
+  const [loadingWinStreak, setLoadingWinStreak] = useState(false);
+  const [winStreakError, setWinStreakError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
@@ -60,6 +68,11 @@ export function ProfileScreen({ navigation }: Props) {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const levelProgress = getLevelProgress(stats.xp);
+  const streakSport = SPORT_CONFIGS.find(
+    (sport) =>
+      isSportEnabled(sport.slug) &&
+      currentUser?.sports.some((profileSport) => profileSport.sport === sport.slug)
+  );
 
   if (!currentUser?.id && isHydratingProfile) {
     return (
@@ -179,6 +192,58 @@ export function ProfileScreen({ navigation }: Props) {
       isActive = false;
     };
   }, [currentUser?.id, isFocused, reloadKey]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadCurrentWinStreak() {
+      if (!currentUser?.id || !streakSport) {
+        if (isActive) {
+          setCurrentWinStreak(null);
+          setLoadingWinStreak(false);
+          setWinStreakError("");
+        }
+        return;
+      }
+
+      if (!isFocused) {
+        return;
+      }
+
+      setCurrentWinStreak(null);
+      setLoadingWinStreak(true);
+      setWinStreakError("");
+
+      try {
+        const nextWinStreak = await getCurrentWinStreakForSport(currentUser.id, streakSport.id);
+
+        if (isActive) {
+          setCurrentWinStreak(nextWinStreak);
+        }
+      } catch (loadError) {
+        if (!isActive) {
+          return;
+        }
+
+        debugError("[ProfileScreen] failed to load current win streak", loadError, {
+          profileId: currentUser.id,
+          sportId: streakSport.id
+        });
+        setCurrentWinStreak(null);
+        setWinStreakError("Streak unavailable");
+      } finally {
+        if (isActive) {
+          setLoadingWinStreak(false);
+        }
+      }
+    }
+
+    void loadCurrentWinStreak();
+
+    return () => {
+      isActive = false;
+    };
+  }, [currentUser?.id, isFocused, reloadKey, streakSport?.id]);
 
   useEffect(() => {
     if (!currentUser?.id || !isFocused) {
@@ -474,6 +539,30 @@ export function ProfileScreen({ navigation }: Props) {
             </Text>
           </View>
         </View>
+        {streakSport ? (
+          <View
+            accessible
+            accessibilityLabel={
+              loadingWinStreak
+                ? `Loading current ${streakSport.displayName} win streak`
+                : winStreakError
+                  ? `Current ${streakSport.displayName} win streak unavailable`
+                  : currentWinStreak === null
+                    ? `Current ${streakSport.displayName} win streak unavailable`
+                    : `Current ${streakSport.displayName} win streak: ${getWinStreakCopy(currentWinStreak).toLowerCase()}`
+            }
+            style={styles.winStreakCard}
+          >
+            <Text style={styles.winStreakLabel}>{streakSport.displayName} Win Streak</Text>
+            {loadingWinStreak ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <Text style={[styles.winStreakValue, winStreakError ? styles.winStreakError : null]}>
+                {winStreakError || (currentWinStreak === null ? "Streak unavailable" : getWinStreakCopy(currentWinStreak))}
+              </Text>
+            )}
+          </View>
+        ) : null}
       </Card>
 
       <Card>
@@ -643,6 +732,31 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textAlign: "center",
     width: "100%"
+  },
+  winStreakCard: {
+    alignItems: "flex-start",
+    gap: spacing.xxs,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted
+  },
+  winStreakLabel: {
+    color: colors.textMuted,
+    fontWeight: "800",
+    fontSize: typography.overline,
+    letterSpacing: 0.8,
+    textTransform: "uppercase"
+  },
+  winStreakValue: {
+    color: colors.text,
+    fontWeight: "800",
+    fontSize: typography.heading
+  },
+  winStreakError: {
+    color: colors.textMuted,
+    fontSize: typography.bodyStrong
   },
   xpCard: {
     alignItems: "flex-start",

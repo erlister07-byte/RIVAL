@@ -4,6 +4,8 @@ import { Database } from "@/types/database";
 import { DEFAULT_LAUNCH_SPORT } from "@/config/sports";
 import { debugError, debugLog, getSafeErrorPayload } from "@/shared/lib/logger";
 import { toServiceError } from "@/shared/lib/serviceError";
+import { getCurrentWinStreak } from "@/shared/lib/winStreak";
+import type { OrderedWinStreakMatch } from "@/shared/lib/winStreak";
 
 import { getAuthenticatedRequestHeaders } from "./authSession";
 import { supabase } from "./supabaseClient";
@@ -12,6 +14,20 @@ import { getRecentMatches as getUserRecentMatches, getProfileStats } from "./use
 type MatchRow = Database["public"]["Tables"]["matches"]["Row"];
 type SportRow = Database["public"]["Tables"]["sports"]["Row"];
 type ChallengeStatus = Database["public"]["Enums"]["challenge_status"];
+
+const WIN_STREAK_PAGE_SIZE = 25;
+
+type CurrentWinStreakRow = Pick<
+  MatchRow,
+  | "id"
+  | "challenger_profile_id"
+  | "opponent_profile_id"
+  | "result_status"
+  | "result_outcome"
+  | "winner_profile_id"
+  | "played_at"
+  | "confirmed_at"
+>;
 
 export type SubmitMatchResultInput = {
   matchId: string;
@@ -639,6 +655,58 @@ export async function getMatchesForProfile(profileId: string): Promise<Match[]> 
   }
 
   return ((data ?? []) as MatchRowWithSport[]).map(mapMatch);
+}
+
+export async function getCurrentWinStreakForSport(profileId: string, sportId: number) {
+  let offset = 0;
+  let streak = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("matches")
+      .select(
+        "id, challenger_profile_id, opponent_profile_id, result_status, result_outcome, winner_profile_id, played_at, confirmed_at"
+      )
+      .eq("result_status", "confirmed")
+      .eq("sport_id", sportId)
+      .or(`challenger_profile_id.eq.${profileId},opponent_profile_id.eq.${profileId}`)
+      .order("played_at", { ascending: false, nullsFirst: false })
+      .order("confirmed_at", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + WIN_STREAK_PAGE_SIZE - 1);
+
+    if (error) {
+      debugError("[matchService] failed to load current win streak", error, {
+        profileId,
+        sportId,
+        offset
+      });
+      throw error;
+    }
+
+    const rows = (data ?? []) as CurrentWinStreakRow[];
+
+    if (rows.some((row) => row.played_at === null)) {
+      throw new Error("Unable to derive current win streak without match play chronology.");
+    }
+
+    const orderedMatches: OrderedWinStreakMatch[] = rows.map((row) => ({
+      challengerProfileId: row.challenger_profile_id,
+      opponentProfileId: row.opponent_profile_id,
+      resultStatus: row.result_status,
+      resultOutcome: row.result_outcome,
+      winnerProfileId: row.winner_profile_id
+    }));
+    const pageStreak = getCurrentWinStreak(orderedMatches, profileId);
+
+    streak += pageStreak;
+
+    if (pageStreak < rows.length || rows.length < WIN_STREAK_PAGE_SIZE) {
+      return streak;
+    }
+
+    offset += rows.length;
+  }
 }
 
 export async function getRecentMatches(profileId: string): Promise<RecentMatch[]> {
