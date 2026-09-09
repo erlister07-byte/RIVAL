@@ -136,17 +136,19 @@ function getProfileSelect(includeAvailabilityStatus = true, includePlayStyleTags
         is_active,
         sports (id, slug, name)
       ),
-      profile_stats (profile_id, wins, losses, draws, matches_played)
+      profile_stats (profile_id, wins, losses, draws, matches_played, xp)
     `;
 }
 
 function mapProfile(row: ProfileWithRelations): Profile {
   const playerSummary = mapPlayerSummary(row);
+  const stats = Array.isArray(row.profile_stats) ? row.profile_stats[0] : row.profile_stats;
 
   return {
     ...playerSummary,
     authUserId: row.auth_user_id ?? undefined,
     email: row.email ?? "",
+    xp: Number.isFinite(stats?.xp) ? stats?.xp ?? 0 : 0,
     vancouverArea: row.vancouver_area,
     challengeRadiusKm: row.challenge_radius_km,
     availabilityStatus: withOptionalFieldFallback(row.availability_status as AvailabilityStatus | null, "unavailable"),
@@ -507,10 +509,10 @@ export async function searchProfilesByUsername(
   return results;
 }
 
-export async function getProfileStats(profileId: string): Promise<Pick<Profile, "wins" | "losses" | "draws" | "matchesPlayed">> {
+export async function getProfileStats(profileId: string): Promise<Pick<Profile, "wins" | "losses" | "draws" | "matchesPlayed" | "xp">> {
   const { data, error } = await supabase
     .from("profile_stats")
-    .select("wins, losses, draws, matches_played")
+    .select("wins, losses, draws, matches_played, xp")
     .eq("profile_id", profileId)
     .maybeSingle();
 
@@ -522,7 +524,8 @@ export async function getProfileStats(profileId: string): Promise<Pick<Profile, 
     wins: data?.wins ?? 0,
     losses: data?.losses ?? 0,
     draws: data?.draws ?? 0,
-    matchesPlayed: data?.matches_played ?? 0
+    matchesPlayed: data?.matches_played ?? 0,
+    xp: Number.isFinite(data?.xp) ? data?.xp ?? 0 : 0
   };
 }
 

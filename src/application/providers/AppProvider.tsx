@@ -189,7 +189,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             wins: nextStats.wins,
             losses: nextStats.losses,
             draws: nextStats.draws,
-            matchesPlayed: nextStats.matchesPlayed
+            matchesPlayed: nextStats.matchesPlayed,
+            xp: nextStats.xp
           }
         : previous
     );
@@ -274,7 +275,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     wins: stats.wins,
                     losses: stats.losses,
                     draws: stats.draws,
-                    matchesPlayed: stats.matchesPlayed
+                    matchesPlayed: stats.matchesPlayed,
+                    xp: stats.xp
                   }
                 : previous
             );
@@ -540,7 +542,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       wins: stats.wins,
       losses: stats.losses,
       draws: stats.draws,
-      matchesPlayed: stats.matchesPlayed
+      matchesPlayed: stats.matchesPlayed,
+      xp: stats.xp
     });
     setRecentMatches(await getRecentMatches(profile.id));
   }
@@ -750,7 +753,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         wins: stats.wins,
         losses: stats.losses,
         draws: stats.draws,
-        matchesPlayed: stats.matchesPlayed
+        matchesPlayed: stats.matchesPlayed,
+        xp: stats.xp
       });
       setCurrentUser((previous) =>
         previous
@@ -759,7 +763,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
               wins: stats.wins,
               losses: stats.losses,
               draws: stats.draws,
-              matchesPlayed: stats.matchesPlayed
+              matchesPlayed: stats.matchesPlayed,
+              xp: stats.xp
             }
           : previous
       );

@@ -159,6 +159,7 @@ export type PlayerSummary = {
 export type Profile = PlayerSummary & {
   authUserId?: string;
   email: string;
+  xp: number;
   vancouverArea: string;
   challengeRadiusKm: number;
   onboardingCompleted: boolean;

@@ -171,6 +171,7 @@ export async function getLoopOneNearbyPlayers({
   return payload.players.map((player) => ({
     ...player,
     draws: player.draws ?? 0,
+    xp: 0,
     email: "",
     challengeRadiusKm: 0,
     onboardingCompleted: true,

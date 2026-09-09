@@ -41,11 +41,12 @@ export function ProfileScreen({ navigation }: Props) {
   const { currentUser, logout, isHydratingProfile } = useAppState();
   const isFocused = useIsFocused();
   const appNavigation = navigation.getParent<NativeStackNavigationProp<AppStackParamList>>();
-  const [stats, setStats] = useState<Pick<Profile, "wins" | "losses" | "draws" | "matchesPlayed">>({
+  const [stats, setStats] = useState<Pick<Profile, "wins" | "losses" | "draws" | "matchesPlayed" | "xp">>({
     wins: 0,
     losses: 0,
     draws: 0,
-    matchesPlayed: 0
+    matchesPlayed: 0,
+    xp: 0
   });
   const [recentMatches, setRecentMatches] = useState<RecentMatch[]>([]);
   const [topRivalries, setTopRivalries] = useState<RivalryRecord[]>([]);
@@ -94,15 +95,17 @@ export function ProfileScreen({ navigation }: Props) {
       wins: currentUser.wins,
       losses: currentUser.losses,
       draws: currentUser.draws,
-      matchesPlayed: currentUser.matchesPlayed
+      matchesPlayed: currentUser.matchesPlayed,
+      xp: currentUser.xp
     });
     setStats({
       wins: currentUser.wins,
       losses: currentUser.losses,
       draws: currentUser.draws,
-      matchesPlayed: currentUser.matchesPlayed
+      matchesPlayed: currentUser.matchesPlayed,
+      xp: currentUser.xp
     });
-  }, [currentUser?.draws, currentUser?.id, currentUser?.losses, currentUser?.matchesPlayed, currentUser?.wins]);
+  }, [currentUser?.draws, currentUser?.id, currentUser?.losses, currentUser?.matchesPlayed, currentUser?.wins, currentUser?.xp]);
 
   useEffect(() => {
     let isActive = true;
@@ -111,7 +114,7 @@ export function ProfileScreen({ navigation }: Props) {
       if (!currentUser?.id) {
         if (isActive) {
           setLoading(false);
-          setStats({ wins: 0, losses: 0, draws: 0, matchesPlayed: 0 });
+          setStats({ wins: 0, losses: 0, draws: 0, matchesPlayed: 0, xp: 0 });
           setRecentMatches([]);
         }
         return;
@@ -141,6 +144,7 @@ export function ProfileScreen({ navigation }: Props) {
           losses: nextStats.losses,
           draws: nextStats.draws,
           matchesPlayed: nextStats.matchesPlayed,
+          xp: nextStats.xp,
           recentMatchCount: nextRecentMatches.length,
           rivalryCount: nextRivalries.length
         });
@@ -157,7 +161,7 @@ export function ProfileScreen({ navigation }: Props) {
             ? loadError.message
             : "Unable to load profile data right now."
         );
-        setStats({ wins: 0, losses: 0, draws: 0, matchesPlayed: 0 });
+        setStats({ wins: 0, losses: 0, draws: 0, matchesPlayed: 0, xp: 0 });
         setRecentMatches([]);
         setTopRivalries([]);
       } finally {
@@ -471,6 +475,14 @@ export function ProfileScreen({ navigation }: Props) {
       </Card>
 
       <Card>
+        <Text style={styles.kicker}>Progress</Text>
+        <Text style={styles.sectionHeader}>Lifetime XP</Text>
+        <View style={styles.xpCard}>
+          <Text style={styles.xpValue}>{stats.xp.toLocaleString()} XP</Text>
+        </View>
+      </Card>
+
+      <Card>
         <Text style={styles.kicker}>Sports</Text>
         <Text style={styles.sectionHeader}>Sports</Text>
         {SPORT_CONFIGS.map((sport) => {
@@ -602,6 +614,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textAlign: "center",
     width: "100%"
+  },
+  xpCard: {
+    alignItems: "flex-start",
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted
+  },
+  xpValue: {
+    color: colors.text,
+    fontWeight: "800",
+    fontSize: typography.heading
   },
   sectionHeader: {
     fontWeight: "700",
