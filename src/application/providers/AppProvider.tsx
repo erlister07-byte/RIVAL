@@ -15,10 +15,9 @@ import {
 import { isLoopOneSandboxMode, isLoopTwoSandboxMode } from "@/application/config/runtimeConfig";
 import { getSportIdBySlug, isSportEnabled } from "@/config/sports";
 import {
-  acceptChallenge as acceptChallengeRecord,
   createChallenge as createChallengeRecord,
-  declineChallenge as declineChallengeRecord,
-  getChallengesForProfile
+  getChallengesForProfile,
+  respondToLoopTwoChallenge
 } from "@/services/challengeService";
 import { supabase } from "@/services/supabaseClient";
 import {
@@ -637,11 +636,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       await sleep(300);
 
+      await respondToLoopTwoChallenge(
+        challengeId,
+        status === "accepted" ? "accept" : "decline"
+      );
+
       if (status === "accepted") {
-        await acceptChallengeRecord(challengeId);
         setMatchReloadKey((value) => value + 1);
-      } else {
-        await declineChallengeRecord(challengeId);
       }
 
       setChallengeReloadKey((value) => value + 1);
