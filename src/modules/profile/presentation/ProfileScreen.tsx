@@ -27,6 +27,7 @@ import { EmptyState } from "@/shared/components/EmptyState";
 import { Screen } from "@/shared/components/Screen";
 import { SportBadge } from "@/shared/components/SportBadge";
 import { formatDateTime } from "@/shared/lib/format";
+import { getLevelProgress } from "@/shared/lib/levels";
 import { debugError, debugLog, getSafeErrorPayload } from "@/shared/lib/logger";
 import { getDiagnosticErrorMessage } from "@/shared/lib/serviceError";
 
@@ -58,6 +59,7 @@ export function ProfileScreen({ navigation }: Props) {
   const [avatarMessage, setAvatarMessage] = useState("");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const levelProgress = getLevelProgress(stats.xp);
 
   if (!currentUser?.id && isHydratingProfile) {
     return (
@@ -476,9 +478,36 @@ export function ProfileScreen({ navigation }: Props) {
 
       <Card>
         <Text style={styles.kicker}>Progress</Text>
-        <Text style={styles.sectionHeader}>Lifetime XP</Text>
+        <Text style={styles.sectionHeader}>RIVAL Level {levelProgress.level}</Text>
         <View style={styles.xpCard}>
-          <Text style={styles.xpValue}>{stats.xp.toLocaleString()} XP</Text>
+          <View style={styles.xpSummary}>
+            <Text style={styles.xpLabel}>Lifetime XP</Text>
+            <Text style={styles.xpValue}>{levelProgress.xp.toLocaleString()} XP</Text>
+          </View>
+          <View style={styles.levelProgressCopy}>
+            <Text style={styles.levelProgressLabel}>Progress toward Level {levelProgress.level + 1}</Text>
+            <Text style={styles.levelProgressValue}>
+              {levelProgress.xpIntoLevel.toLocaleString()} / {levelProgress.xpRequiredForNextLevel.toLocaleString()} XP
+            </Text>
+          </View>
+          <View
+            accessibilityRole="progressbar"
+            accessibilityLabel={`Progress toward RIVAL Level ${levelProgress.level + 1}`}
+            accessibilityValue={{
+              min: 0,
+              max: levelProgress.xpRequiredForNextLevel,
+              now: levelProgress.xpIntoLevel,
+              text: `${levelProgress.xpIntoLevel} of ${levelProgress.xpRequiredForNextLevel} XP`
+            }}
+            style={styles.levelProgressTrack}
+          >
+            <View
+              style={[
+                styles.levelProgressFill,
+                { width: `${levelProgress.progressRatio * 100}%` }
+              ]}
+            />
+          </View>
         </View>
       </Card>
 
@@ -618,15 +647,49 @@ const styles = StyleSheet.create({
   xpCard: {
     alignItems: "flex-start",
     justifyContent: "center",
+    gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     borderRadius: 16,
     backgroundColor: colors.surfaceMuted
   },
+  xpSummary: {
+    gap: spacing.xxs
+  },
+  xpLabel: {
+    color: colors.textMuted,
+    fontWeight: "700",
+    fontSize: typography.caption
+  },
   xpValue: {
     color: colors.text,
     fontWeight: "800",
     fontSize: typography.heading
+  },
+  levelProgressCopy: {
+    gap: spacing.xxs
+  },
+  levelProgressLabel: {
+    color: colors.textMuted,
+    fontWeight: "700",
+    fontSize: typography.caption
+  },
+  levelProgressValue: {
+    color: colors.text,
+    fontWeight: "700",
+    fontSize: typography.bodyStrong
+  },
+  levelProgressTrack: {
+    width: "100%",
+    height: 10,
+    overflow: "hidden",
+    borderRadius: 999,
+    backgroundColor: colors.border
+  },
+  levelProgressFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: colors.primary
   },
   sectionHeader: {
     fontWeight: "700",
