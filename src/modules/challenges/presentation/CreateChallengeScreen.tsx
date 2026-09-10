@@ -1,7 +1,7 @@
 import { useIsFocused } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Calendar, DateData } from "react-native-calendars";
 import { CircleUserRound, MapPin } from "lucide-react-native";
 
@@ -25,7 +25,6 @@ import {
   getPlayStyleTagLabel,
   getStakeDisplay
 } from "@/core/types/models";
-import { getUserProfile } from "@/services/userService";
 import { createDirectChallenge, createLoopTwoOpenChallenge } from "@/services/challengeService";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
@@ -168,7 +167,7 @@ function getTimeOptions(intervalMinutes = 15) {
 type ActivePicker = "date" | "time" | null;
 
 export function CreateChallengeScreen({ navigation, route }: Props) {
-  const { currentUser, nearbyPlayers, createChallenge } = useAppState();
+  const { currentUser, createChallenge } = useAppState();
   const isFocused = useIsFocused();
   const isRematch = route.params?.isRematch ?? false;
   const challengeMode = isLoopTwoSandboxMode && route.params?.mode !== "open" ? "direct" : route.params?.mode ?? "direct";
@@ -186,13 +185,15 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
   const [selectedStakeType, setSelectedStakeType] = useState<StakeOption["type"]>("bragging_rights");
   const [stakeNote, setStakeNote] = useState(route.params?.stakeNote ?? "");
   const [stakeNoteError, setStakeNoteError] = useState("");
-  const [prefilledOpponentName, setPrefilledOpponentName] = useState("");
-  const [prefillLoading, setPrefillLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const { success, showSuccess, clearSuccess } = useTimedSuccess();
   const resetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const submissionInFlightRef = useRef(false);
+  const prefilledOpponentName =
+    route.params?.opponentName ??
+    route.params?.opponentUsername ??
+    (route.params?.opponentId ? "Selected opponent" : "");
   const prefilledOpponentUsername = route.params?.opponentUsername ?? route.params?.opponentName ?? prefilledOpponentName;
   const rematchOpponentName = route.params?.opponentName ?? route.params?.opponentUsername ?? prefilledOpponentName;
   const scheduledAt = useMemo(() => buildScheduledAt(selectedDate, selectedTime), [selectedDate, selectedTime]);
@@ -246,61 +247,6 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
     }
   }, [matchFormat, sport]);
 
-  useEffect(() => {
-    let isActive = true;
-
-    async function loadPrefilledOpponent() {
-      const routedOpponentId = route.params?.opponentId;
-
-      if (!routedOpponentId) {
-        if (isActive) {
-          setPrefilledOpponentName("");
-          setPrefillLoading(false);
-        }
-        return;
-      }
-
-      const existingOption = nearbyPlayers.find((player) => player.id === routedOpponentId);
-      if (existingOption) {
-        if (isActive) {
-          setPrefilledOpponentName(route.params?.opponentUsername ?? existingOption.username);
-          setPrefillLoading(false);
-        }
-        return;
-      }
-
-      if (isLoopTwoSandboxMode) {
-        if (isActive) {
-          setPrefilledOpponentName(route.params?.opponentUsername ?? "Selected opponent");
-          setPrefillLoading(false);
-        }
-        return;
-      }
-
-      setPrefillLoading(true);
-      try {
-        const profile = await getUserProfile({ profileId: routedOpponentId });
-        if (isActive) {
-          setPrefilledOpponentName(route.params?.opponentUsername ?? profile?.username ?? "Selected opponent");
-        }
-      } catch {
-        if (isActive) {
-          setPrefilledOpponentName(route.params?.opponentUsername ?? "Selected opponent");
-        }
-      } finally {
-        if (isActive) {
-          setPrefillLoading(false);
-        }
-      }
-    }
-
-    void loadPrefilledOpponent();
-
-    return () => {
-      isActive = false;
-    };
-  }, [nearbyPlayers, route.params?.opponentId, route.params?.opponentUsername]);
-
   useEffect(
     () => () => {
       if (resetTimeoutRef.current) {
@@ -317,11 +263,10 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
   }, [clearSuccess, isFocused]);
 
   const opponentOptions = useMemo(() => {
-    const baseOptions = nearbyPlayers.filter((player) => player.id !== currentUser?.id);
     const routedOpponentId = route.params?.opponentId;
 
-    if (!routedOpponentId || baseOptions.some((player) => player.id === routedOpponentId)) {
-      return baseOptions;
+    if (!routedOpponentId) {
+      return [];
     }
 
     return [
@@ -347,13 +292,10 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
         xp: 0,
         playStyleTags: [],
         distanceKm: 0
-      },
-      ...baseOptions
+      }
     ];
   }, [
-    currentUser?.id,
     currentUser?.vancouverArea,
-    nearbyPlayers,
     prefilledOpponentName,
     route.params?.opponentId,
     route.params?.sportId,
@@ -598,12 +540,6 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
           </View>
         ) : (
           <>
-            {prefillLoading ? (
-              <View style={styles.prefillState}>
-                <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={styles.prefillText}>Loading rematch opponent...</Text>
-              </View>
-            ) : null}
             {!opponentId ? (
               <View style={styles.emptyOpponentState}>
                 <Text style={styles.emptyOpponentTitle}>Choose your opponent</Text>
@@ -629,7 +565,7 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
                       navigation.navigate("NearbyPlayers", {
                         sport,
                         availability: route.params?.timingContext ?? "today",
-                        mode: "play_now"
+                        mode: "nearby"
                       })
                     }
                     style={({ pressed }) => [
@@ -1125,11 +1061,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: typography.caption,
     lineHeight: 20
-  },
-  prefillState: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs
   },
   emptyOpponentState: {
     gap: spacing.sm

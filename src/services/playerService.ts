@@ -1,11 +1,9 @@
-import { AvailabilityStatus, Profile, matchesAvailabilityIntent } from "@/core/types/models";
+import { AvailabilityStatus, PlayStyleTag, Profile } from "@/core/types/models";
 import { Database } from "@/types/database";
-import { DEFAULT_LAUNCH_SPORT, getSportConfigById, getSportIdBySlug, isSportEnabled } from "@/config/sports";
-import { debugError, debugLog } from "@/shared/lib/logger";
+import { DEFAULT_LAUNCH_SPORT, getSportIdBySlug, isSportEnabled } from "@/config/sports";
+import { debugLog } from "@/shared/lib/logger";
 
 import { getAuthenticatedRequestHeaders } from "./authSession";
-import { getUserProfile } from "./userService";
-import { supabase } from "./supabaseClient";
 
 type SkillLevel = Database["public"]["Enums"]["skill_level"];
 type SportSlug = Database["public"]["Enums"]["sport_slug"];
@@ -18,7 +16,15 @@ export type NearbyPlayerFilters = {
   availability?: AvailabilityStatus;
 };
 
-export type NearbyPlayer = Profile & {
+export type NearbyPlayer = {
+  id: string;
+  username: string;
+  displayName: string;
+  vancouverArea: string;
+  availabilityStatus: AvailabilityStatus;
+  sports: Profile["sports"];
+  playStyleTags: PlayStyleTag[];
+  matchesPlayed: number;
   distanceKm: number;
 };
 
@@ -29,114 +35,41 @@ export type SuggestedOpponent = NearbyPlayer & {
   reason: string;
 };
 
-type LoopOneNearbyPlayerResponse = {
+type NearbyPlayerResponse = {
   id: string;
-  username: string;
-  displayName: string;
+  username?: string | null;
+  displayName?: string | null;
   vancouverArea: string;
   availabilityStatus: AvailabilityStatus;
   sports: Profile["sports"];
-  wins: number;
-  losses: number;
-  draws?: number;
   matchesPlayed: number;
   distanceKm: number;
 };
 
-type LoopOneNearbyPlayersResponse = {
+type NearbyPlayersResponse = {
   error?: string;
-  players?: LoopOneNearbyPlayerResponse[];
+  players?: NearbyPlayerResponse[];
 };
 
-type ActivityRow = {
-  id: string;
-  updated_at: string;
-};
+function getDiscoveryName(primary?: string | null, secondary?: string | null) {
+  return primary?.trim() || secondary?.trim() || "Player";
+}
 
-export async function getPickleballPlayers(currentProfileId: string): Promise<Profile[]> {
-  const pickleballSportId = getSportIdBySlug(DEFAULT_LAUNCH_SPORT);
-
-  if (!pickleballSportId) {
+export async function getNearbyPlayers({
+  sport,
+  availability,
+  skillLevel,
+  maxDistanceKm,
+  area
+}: NearbyPlayerFilters = {}): Promise<NearbyPlayer[]> {
+  if (sport && !isSportEnabled(sport)) {
     return [];
   }
 
-  debugLog("[playerService] loading pickleball players", {
-    currentProfileId,
-    sportId: pickleballSportId
-  });
-
-  const { data, error } = await supabase
-    .from("profile_sports")
-    .select("profile_id")
-    .eq("sport_id", pickleballSportId)
-    .eq("is_active", true)
-    .neq("profile_id", currentProfileId);
-
-  if (error) {
-    debugError("[playerService] failed to load pickleball player ids", error, {
-      currentProfileId,
-      sportId: pickleballSportId
-    });
-    throw error;
+  if (availability === "unavailable") {
+    return [];
   }
 
-  const players = await Promise.all(
-    (data ?? []).map((row) => getUserProfile({ profileId: row.profile_id }))
-  );
-
-  return players
-    .filter((player): player is Profile => Boolean(player))
-    .filter((player) => player.id !== currentProfileId)
-    .filter((player) => player.sports.some((sport) => sport.sport === DEFAULT_LAUNCH_SPORT))
-    .sort((left, right) => left.username.localeCompare(right.username));
-}
-
-const VANCOUVER_AREA_COORDINATES: Record<string, { latitude: number; longitude: number }> = {
-  Downtown: { latitude: 49.2827, longitude: -123.1207 },
-  Kitsilano: { latitude: 49.2681, longitude: -123.1686 },
-  "Mount Pleasant": { latitude: 49.2626, longitude: -123.1007 },
-  "East Vancouver": { latitude: 49.2752, longitude: -123.0653 },
-  "West End": { latitude: 49.2877, longitude: -123.1323 },
-  "North Vancouver": { latitude: 49.3201, longitude: -123.0724 },
-  Burnaby: { latitude: 49.2488, longitude: -122.9805 },
-  Richmond: { latitude: 49.1666, longitude: -123.1336 },
-  Surrey: { latitude: 49.1913, longitude: -122.849 },
-  "New Westminster": { latitude: 49.2057, longitude: -122.911 }
-};
-
-function getProfileCoordinates(profile: Profile) {
-  return VANCOUVER_AREA_COORDINATES[profile.vancouverArea] ?? VANCOUVER_AREA_COORDINATES.Downtown;
-}
-
-function degreesToRadians(value: number) {
-  return (value * Math.PI) / 180;
-}
-
-function calculateDistanceKm(
-  from: { latitude: number; longitude: number },
-  to: { latitude: number; longitude: number }
-) {
-  const earthRadiusKm = 6371;
-  const deltaLatitude = degreesToRadians(to.latitude - from.latitude);
-  const deltaLongitude = degreesToRadians(to.longitude - from.longitude);
-  const fromLatitude = degreesToRadians(from.latitude);
-  const toLatitude = degreesToRadians(to.latitude);
-
-  const haversine =
-    Math.sin(deltaLatitude / 2) * Math.sin(deltaLatitude / 2) +
-    Math.cos(fromLatitude) *
-      Math.cos(toLatitude) *
-      Math.sin(deltaLongitude / 2) *
-      Math.sin(deltaLongitude / 2);
-
-  const arc = 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
-  return Number((earthRadiusKm * arc).toFixed(1));
-}
-
-export async function getLoopOneNearbyPlayers({
-  sport,
-  availability
-}: Pick<NearbyPlayerFilters, "sport" | "availability">): Promise<NearbyPlayer[]> {
   const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -156,9 +89,12 @@ export async function getLoopOneNearbyPlayers({
       apikey: supabaseAnonKey,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ sport, availability })
+    body: JSON.stringify({
+      sport: sport ?? DEFAULT_LAUNCH_SPORT,
+      availability: availability ?? "this_week"
+    })
   });
-  const payload = (await response.json().catch(() => null)) as LoopOneNearbyPlayersResponse | null;
+  const payload = (await response.json().catch(() => null)) as NearbyPlayersResponse | null;
 
   if (!response.ok) {
     throw new Error(payload?.error ?? `Nearby player lookup failed with status ${response.status}`);
@@ -168,219 +104,38 @@ export async function getLoopOneNearbyPlayers({
     throw new Error("Nearby player response did not include players.");
   }
 
-  return payload.players.map((player) => ({
-    ...player,
-    draws: player.draws ?? 0,
-    xp: 0,
-    email: "",
-    challengeRadiusKm: 0,
-    onboardingCompleted: true,
-    playStyleTags: []
-  }));
+  return payload.players
+    .map((player) => {
+      const username = getDiscoveryName(player.username, player.displayName);
+      const displayName = getDiscoveryName(player.displayName, player.username);
+
+      return {
+        ...player,
+        username,
+        displayName,
+        playStyleTags: []
+      };
+    })
+    .filter((player) => maxDistanceKm === undefined || player.distanceKm <= maxDistanceKm)
+    .filter((player) => !area || player.vancouverArea === area)
+    .filter((player) => !skillLevel || player.sports.some((entry) => entry.skillLevel === skillLevel));
 }
 
-export async function getNearbyPlayers(
-  currentProfileId: string,
-  filters: NearbyPlayerFilters = {}
+export function getLoopOneNearbyPlayers(
+  filters: Pick<NearbyPlayerFilters, "sport" | "availability">
 ): Promise<NearbyPlayer[]> {
-  debugLog("[playerService] loading nearby players", {
-    currentProfileId,
-    filters
-  });
-
-  const currentProfile = await getUserProfile({ profileId: currentProfileId });
-
-  if (!currentProfile) {
-    debugLog("[playerService] skipping nearby players because current profile is not ready", {
-      currentProfileId
-    });
-    return [];
-  }
-
-  const currentCoordinates = getProfileCoordinates(currentProfile);
-  const liveSportFilter = filters.sport && isSportEnabled(filters.sport) ? filters.sport : undefined;
-  const selectedSportId = liveSportFilter ? getSportIdBySlug(liveSportFilter) ?? null : null;
-
-  if (filters.sport && !liveSportFilter) {
-    return [];
-  }
-
-  let query = supabase
-    .from("profiles")
-    .select("id")
-    .neq("id", currentProfileId)
-    .eq("onboarding_completed", true);
-
-  if (filters.area) {
-    query = query.eq("vancouver_area", filters.area);
-  }
-
-  const { data: profileIds, error } = await query;
-
-  if (error) {
-    debugError("[playerService] failed to load nearby player ids", error, {
-      currentProfileId,
-      filters
-    });
-    throw error;
-  }
-
-  const players = await Promise.all(
-    (profileIds ?? []).map((item) => getUserProfile({ profileId: item.id }))
-  );
-
-  const filterReasons = {
-    missingProfile: 0,
-    selfExcluded: 0,
-    missingEnabledSport: 0,
-    outsideDistance: 0,
-    availabilityMismatch: 0,
-    sportMismatch: 0,
-    skillMismatch: 0
-  };
-
-  const filteredPlayers: NearbyPlayer[] = [];
-
-  players.forEach((player) => {
-    if (!player) {
-      filterReasons.missingProfile += 1;
-      return;
-    }
-
-    if (player.id === currentProfile.id) {
-      filterReasons.selfExcluded += 1;
-      return;
-    }
-
-    const distanceKm = calculateDistanceKm(currentCoordinates, getProfileCoordinates(player));
-    const withinDistance = filters.maxDistanceKm === undefined || distanceKm <= filters.maxDistanceKm;
-    const liveSports = player.sports.filter((sport) => isSportEnabled(sport.sport));
-    const matchesAvailability = matchesAvailabilityIntent(player.availabilityStatus, filters.availability);
-    const matchesSport =
-      liveSportFilter === undefined ||
-      liveSports.some((sport) => sport.sport === liveSportFilter);
-    const matchesSkill =
-      filters.skillLevel === undefined ||
-      liveSports.some((sport) => sport.skillLevel === filters.skillLevel);
-
-    if (liveSports.length === 0) {
-      filterReasons.missingEnabledSport += 1;
-      return;
-    }
-
-    if (!withinDistance) {
-      filterReasons.outsideDistance += 1;
-      return;
-    }
-
-    if (!matchesAvailability) {
-      filterReasons.availabilityMismatch += 1;
-      return;
-    }
-
-    if (!matchesSport) {
-      filterReasons.sportMismatch += 1;
-      return;
-    }
-
-    if (!matchesSkill) {
-      filterReasons.skillMismatch += 1;
-      return;
-    }
-
-    filteredPlayers.push({
-      ...player,
-      sports: liveSports,
-      distanceKm: calculateDistanceKm(currentCoordinates, getProfileCoordinates(player))
-    });
-  });
-
-  debugLog("[playerService] nearby players filtered", {
-    currentProfileId,
-    selectedSportId,
-    selectedSport: liveSportFilter ?? null,
-    rawResults: (profileIds ?? []).length,
-    filteredResults: filteredPlayers.length,
-    reasons: filterReasons
-  });
-
-  return filteredPlayers;
+  return getNearbyPlayers(filters);
 }
 
-export async function getSuggestedOpponents(
-  currentProfileId: string,
-  selectedSportId?: number,
+export async function getSuggestedOpponents({
+  sport = DEFAULT_LAUNCH_SPORT,
+  availability = "today",
   limit = 5
-): Promise<SuggestedOpponent[]> {
-  const currentProfile = await getUserProfile({ profileId: currentProfileId });
-
-  if (!currentProfile) {
-    debugLog("[playerService] skipping suggested opponents because current profile is not ready", {
-      currentProfileId,
-      selectedSportId: selectedSportId ?? null
-    });
-    return [];
-  }
-
-  const selectedSport =
-    (selectedSportId ? getSportConfigById(selectedSportId)?.slug : undefined) ??
-    currentProfile.sports.find((sport) => isSportEnabled(sport.sport))?.sport ??
-    DEFAULT_LAUNCH_SPORT;
-
-  if (!selectedSport || !isSportEnabled(selectedSport)) {
-    return [];
-  }
-
-  const strictNearbyPlayers = await getNearbyPlayers(currentProfileId, {
-    sport: selectedSport,
-    maxDistanceKm: currentProfile.challengeRadiusKm,
-    availability: currentProfile.availabilityStatus === "unavailable" ? "today" : currentProfile.availabilityStatus
-  });
-
-  const fallbackRadiusKm = Math.min(Math.max(currentProfile.challengeRadiusKm * 2, currentProfile.challengeRadiusKm), 50);
-  const fallbackNearbyPlayers =
-    strictNearbyPlayers.length >= limit
-      ? []
-      : await getNearbyPlayers(currentProfileId, {
-          sport: selectedSport,
-          maxDistanceKm: fallbackRadiusKm,
-          availability: currentProfile.availabilityStatus === "unavailable" ? "today" : currentProfile.availabilityStatus
-        });
-
-  const mergedPlayers = Array.from(
-    new Map(
-      [...strictNearbyPlayers, ...fallbackNearbyPlayers].map((player) => [player.id, player])
-    ).values()
-  );
-
-  if (mergedPlayers.length === 0) {
-    return [];
-  }
-
-  const { data: activityRows, error: activityError } = await supabase
-    .from("profiles")
-    .select("id, updated_at")
-    .in(
-      "id",
-      mergedPlayers.map((player) => player.id)
-    );
-
-  if (activityError) {
-    throw activityError;
-  }
-
-  const lastActiveById = new Map(
-    ((activityRows ?? []) as ActivityRow[]).map((row) => [row.id, new Date(row.updated_at).getTime()])
-  );
-
-  const suggestedPlayers = mergedPlayers
+}: Pick<NearbyPlayerFilters, "sport" | "availability"> & { limit?: number } = {}): Promise<SuggestedOpponent[]> {
+  const nearbyPlayers = await getNearbyPlayers({ sport, availability });
+  const availabilityOrder: AvailabilityStatus[] = ["now", "today", "this_week", "unavailable"];
+  const suggestedPlayers = nearbyPlayers
     .sort((left, right) => {
-      const activityDelta = (lastActiveById.get(right.id) ?? 0) - (lastActiveById.get(left.id) ?? 0);
-      if (activityDelta !== 0) {
-        return activityDelta;
-      }
-
-      const availabilityOrder = ["now", "today", "this_week", "unavailable"];
       const availabilityDelta =
         availabilityOrder.indexOf(left.availabilityStatus) - availabilityOrder.indexOf(right.availabilityStatus);
 
@@ -397,22 +152,16 @@ export async function getSuggestedOpponents(
     .slice(0, limit)
     .map((player) => ({
       ...player,
-      matchedSport: selectedSport,
-      matchedSkillLevel: player.sports.find((sport) => sport.sport === selectedSport)?.skillLevel,
-      sportId: getSportIdBySlug(selectedSport) as number,
-      reason:
-        (lastActiveById.get(player.id) ?? 0) > Date.now() - 1000 * 60 * 60 * 24 * 14
-          ? "Recently active"
-          : "Good match"
+      matchedSport: sport,
+      matchedSkillLevel: player.sports.find((entry) => entry.sport === sport)?.skillLevel,
+      sportId: getSportIdBySlug(sport) as number,
+      reason: player.availabilityStatus === "now" ? "Ready now" : "Good match"
     }));
 
   debugLog("[playerService] suggested opponents ready", {
-    currentProfileId,
-    selectedSportId: getSportIdBySlug(selectedSport) ?? null,
-    selectedSport,
-    strictCount: strictNearbyPlayers.length,
-    fallbackCount: fallbackNearbyPlayers.length,
-    mergedCount: mergedPlayers.length,
+    selectedSportId: getSportIdBySlug(sport) ?? null,
+    selectedSport: sport,
+    nearbyCount: nearbyPlayers.length,
     filteredResults: suggestedPlayers.length
   });
 

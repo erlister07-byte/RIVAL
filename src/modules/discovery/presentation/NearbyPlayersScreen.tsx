@@ -171,7 +171,7 @@ function NearbyPlayersContent({
         } else {
           const nextPlayers = sandboxMode
             ? await getLoopOneNearbyPlayers({ sport, availability: timingContext })
-            : await getNearbyPlayers(currentUser.id, {
+            : await getNearbyPlayers({
                 sport,
                 maxDistanceKm: currentUser.challengeRadiusKm,
                 availability: timingContext
@@ -309,6 +309,7 @@ function NearbyPlayersContent({
           onCreateChallenge?.({
             opponentId: item.id,
             opponentUsername: item.username,
+            opponentName: item.displayName,
             sportId: getSportIdBySlug(sport),
             timingContext
           });

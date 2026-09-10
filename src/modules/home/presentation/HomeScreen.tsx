@@ -97,7 +97,10 @@ export function HomeScreen({ navigation }: Props) {
       setSuggestionsError("");
 
       try {
-        const nextSuggestions = await getSuggestedOpponents(currentUser.id);
+        const nextSuggestions = await getSuggestedOpponents({
+          sport: activeSport?.sport ?? DEFAULT_LAUNCH_SPORT,
+          availability: defaultPlayTiming
+        });
 
         if (isActive) {
           setSuggestedMatches(nextSuggestions);
@@ -253,6 +256,7 @@ export function HomeScreen({ navigation }: Props) {
                   navigation.navigate("CreateChallenge", {
                     opponentId: player.id,
                     opponentUsername: player.username,
+                    opponentName: player.displayName,
                     sportId: player.sportId,
                     timingContext: defaultPlayTiming
                   })

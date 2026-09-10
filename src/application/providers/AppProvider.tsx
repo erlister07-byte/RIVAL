@@ -27,7 +27,6 @@ import {
   rejectMatchResult,
   submitMatchResult
 } from "@/services/matchService";
-import { NearbyPlayer, getNearbyPlayers } from "@/services/playerService";
 import {
   createUserProfile,
   getCurrentUserProfile,
@@ -85,7 +84,6 @@ type AppContextValue = {
   sessionStatus: SessionStatus;
   authUser: User | null;
   currentUser: Profile | null;
-  nearbyPlayers: NearbyPlayer[];
   challenges: Challenge[];
   matches: Match[];
   recentMatches: RecentMatch[];
@@ -144,7 +142,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
-  const [nearbyPlayers, setNearbyPlayers] = useState<NearbyPlayer[]>([]);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [recentMatches, setRecentMatches] = useState<RecentMatch[]>([]);
@@ -223,7 +220,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setIsAuthenticated(false);
       setIsHydratingProfile(false);
       setCurrentUser(null);
-      setNearbyPlayers([]);
       setChallenges([]);
       setMatches([]);
       setRecentMatches([]);
@@ -456,53 +452,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [currentUser?.id, matchReloadKey]);
 
-  useEffect(() => {
-    let isActive = true;
-
-    async function loadNearbyPlayers() {
-      if (isLoopOneSandboxMode || isLoopTwoSandboxMode) {
-        if (isActive) {
-          setNearbyPlayers([]);
-        }
-        return;
-      }
-
-      if (!currentUser?.id || !currentUser.onboardingCompleted) {
-        if (isActive) {
-          setNearbyPlayers([]);
-        }
-
-        if (currentUser?.id && !currentUser.onboardingCompleted) {
-          debugLog("[AppProvider] skipping nearby players until profile onboarding is complete", {
-            profileId: currentUser.id
-          });
-        }
-
-        return;
-      }
-
-      try {
-        const nextPlayers = await getNearbyPlayers(currentUser.id);
-
-        if (isActive) {
-          setNearbyPlayers(nextPlayers);
-        }
-      } catch (error) {
-        debugError("Failed to load nearby players", error, { profileId: currentUser.id });
-
-        if (isActive) {
-          setNearbyPlayers([]);
-        }
-      }
-    }
-
-    void loadNearbyPlayers();
-
-    return () => {
-      isActive = false;
-    };
-  }, [currentUser?.id, currentUser?.onboardingCompleted]);
-
   async function signUp(input: AuthFormInput) {
     const { error } = await supabase.auth.signUp({
       email: normalizeEmail(input.email),
@@ -680,11 +629,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
               playStyleTags: updatedProfile.playStyleTags
             }
           : previous
-      );
-      setNearbyPlayers((previous) =>
-        previous.map((player) =>
-          player.id === currentUser.id ? { ...player, playStyleTags: updatedProfile.playStyleTags } : player
-        )
       );
     } catch (error) {
       debugError("[AppProvider] updatePlayStyleTags failed", error, {
@@ -877,7 +821,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionStatus,
       authUser,
       currentUser,
-      nearbyPlayers,
       challenges,
       matches,
       recentMatches,
@@ -905,7 +848,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isBooting,
       isHydratingProfile,
       matches,
-      nearbyPlayers,
       updateAvailability,
       updatePlayStyleTags,
       refreshAuthUser,
