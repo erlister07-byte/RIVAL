@@ -11,10 +11,9 @@ import { useAppState } from "@/application/providers/AppProvider";
 import { getChallengeTypeLabel, getStakeDisplay } from "@/core/types/models";
 import {
   cancelChallenge,
+  getChallengeInbox,
   getChallengeInboxActivitySummary,
   ChallengeInboxItem,
-  getReceivedChallengeInbox,
-  getSentChallengeInbox,
   subscribeToChallengeActivity
 } from "@/services/challengeService";
 import {
@@ -237,15 +236,14 @@ export function ChallengeInboxScreen({ navigation }: Props) {
 
       try {
         const lastViewedAt = await getChallengeInboxLastViewedAt(currentUser.id);
-        const [received, sent, activitySummary] = await Promise.all([
-          getReceivedChallengeInbox(currentUser.id),
-          getSentChallengeInbox(currentUser.id),
+        const [inbox, activitySummary] = await Promise.all([
+          getChallengeInbox(currentUser.id),
           getChallengeInboxActivitySummary(currentUser.id, lastViewedAt)
         ]);
 
         if (isActive) {
-          setReceivedChallenges(received);
-          setSentChallenges(sent);
+          setReceivedChallenges(inbox.received);
+          setSentChallenges(inbox.sent);
           setNewActivitySummary(activitySummary);
           await markChallengeInboxViewed(currentUser.id);
         }

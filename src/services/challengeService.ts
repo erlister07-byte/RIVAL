@@ -49,6 +49,32 @@ type LoopTwoChallengeResponse = {
 
 export type LoopTwoChallenge = LoopTwoChallengeResponse;
 
+type ChallengeIdentity = {
+  profileId: string;
+  displayName: string;
+  username: string;
+};
+
+type CanonicalUserChallenge = LoopTwoChallengeResponse & {
+  challengerProfileId: string;
+  opponentProfileId: string | null;
+  participants: {
+    challenger: ChallengeIdentity;
+    opponent: ChallengeIdentity | null;
+  };
+  counterpart: ChallengeIdentity | null;
+  acceptedAt: string | null;
+  declinedAt: string | null;
+  canceledAt: string | null;
+  completedAt: string | null;
+  isOpen: boolean;
+};
+
+type GetUserChallengesResponse = {
+  challenges: CanonicalUserChallenge[];
+  openChallenges?: CanonicalUserChallenge[];
+};
+
 export type CreateDirectChallengeInput = {
   opponentProfileId: string;
   sport: Challenge["sport"];
@@ -139,7 +165,7 @@ export async function cancelLoopTwoOpenChallenge(challengeId: string): Promise<v
 }
 
 export async function getLoopTwoChallenges(): Promise<LoopTwoChallenge[]> {
-  const response = await invokeLoopTwoChallengeFunction<{ challenges: LoopTwoChallenge[] }>("get-user-challenges");
+  const response = await invokeLoopTwoChallengeFunction<GetUserChallengesResponse>("get-user-challenges");
   return response.challenges;
 }
 
@@ -156,7 +182,13 @@ export async function respondToLoopTwoChallenge(
 export type ChallengeInboxItem = Challenge & {
   counterpartProfileId: string;
   counterpartName: string;
+  counterpartUsername?: string;
   direction: "received" | "sent";
+};
+
+export type ChallengeInbox = {
+  received: ChallengeInboxItem[];
+  sent: ChallengeInboxItem[];
 };
 
 type ChallengeRowWithSport = ChallengeRow & {
@@ -308,97 +340,98 @@ async function getChallengesByColumn(
   return ((data ?? []) as ChallengeRowWithSport[]).map(mapChallenge);
 }
 
-async function attachCounterpartNames(
-  challenges: Challenge[],
-  currentProfileId: string,
-  direction: "received" | "sent"
-): Promise<ChallengeInboxItem[]> {
-  const openSentChallenges = direction === "sent"
-    ? challenges.filter(
-        (challenge) =>
-          challenge.isOpen &&
-          challenge.challengerProfileId === currentProfileId &&
-          !challenge.opponentProfileId &&
-          challenge.status === "pending"
-      )
-    : [];
+function getCanonicalChallengeName(identity: ChallengeIdentity | null) {
+  return identity?.displayName.trim() || identity?.username.trim() || "Opponent";
+}
 
-  const filteredChallenges = challenges.filter((challenge) => {
-    if (challenge.isOpen && !challenge.opponentProfileId) {
-      return false;
+function mapCanonicalChallengeInboxItem(
+  challenge: CanonicalUserChallenge,
+  currentProfileId: string
+): ChallengeInboxItem | null {
+  const direction = challenge.direction === "incoming" ? "received" : "sent";
+
+  if (challenge.isOpen && !challenge.opponentProfileId) {
+    if (
+      direction !== "sent" ||
+      challenge.challengerProfileId !== currentProfileId ||
+      challenge.status !== "pending"
+    ) {
+      return null;
     }
-
-    const isTrueSelfChallenge = challenge.challengerProfileId === challenge.opponentProfileId;
-    const isValidDirection =
-      direction === "received"
-        ? challenge.opponentProfileId === currentProfileId &&
-          challenge.challengerProfileId !== currentProfileId
-        : challenge.challengerProfileId === currentProfileId &&
-          challenge.opponentProfileId !== currentProfileId;
-    const counterpartProfileId =
-      direction === "received" ? challenge.challengerProfileId : challenge.opponentProfileId;
-    const hasMissingCounterpart = !counterpartProfileId;
-    const hasInvalidCounterpart = counterpartProfileId === currentProfileId;
-
-    if (isTrueSelfChallenge || !isValidDirection || hasMissingCounterpart || hasInvalidCounterpart) {
-      return false;
-    }
-
-    return true;
-  });
-
-  const counterpartIds = Array.from(
-    new Set(
-      filteredChallenges.map((challenge) =>
-        direction === "received" ? challenge.challengerProfileId : challenge.opponentProfileId
-      ).filter((profileId): profileId is string => Boolean(profileId))
-    )
-  );
-
-  if (filteredChallenges.length === 0 || counterpartIds.length === 0) {
-    return openSentChallenges.map((challenge) => ({
-      ...challenge,
-      counterpartProfileId: challenge.id,
-      counterpartName: "Open challenge",
-      direction
-    }));
-  }
-
-  const { data: profiles, error } = await supabase
-    .from("profiles")
-    .select("id, username, display_name")
-    .in("id", counterpartIds);
-
-  if (error) {
-    throw error;
-  }
-
-  const profilesById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
-
-  const namedChallenges = filteredChallenges.map((challenge) => {
-    const counterpartProfileId =
-      (direction === "received" ? challenge.challengerProfileId : challenge.opponentProfileId) ?? challenge.id;
-    const counterpartProfile = profilesById.get(counterpartProfileId);
-    const counterpartName =
-      counterpartProfile?.username ?? counterpartProfile?.display_name ?? "Unknown player";
 
     return {
-      ...challenge,
-      counterpartProfileId,
-      counterpartName,
-      direction
-    };
-  });
-
-  return [
-    ...openSentChallenges.map((challenge) => ({
-      ...challenge,
+      id: challenge.id,
+      sport: challenge.sport,
+      challengerProfileId: challenge.challengerProfileId,
+      scheduledAt: challenge.scheduledAt,
+      locationName: challenge.locationName,
+      challengeType: challenge.challengeType,
+      stakeType: challenge.stakeType ?? DEFAULT_STAKE_TYPE,
+      stakeLabel: challenge.stakeLabel ?? DEFAULT_STAKE_LABEL,
+      stakeNote: challenge.stakeNote ?? undefined,
+      status: challenge.status,
+      createdAt: challenge.createdAt,
+      isOpen: true,
       counterpartProfileId: challenge.id,
       counterpartName: "Open challenge",
       direction
-    })),
-    ...namedChallenges
-  ].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+    };
+  }
+
+  const counterpart = challenge.counterpart;
+  const isValidDirection =
+    direction === "received"
+      ? challenge.opponentProfileId === currentProfileId &&
+        challenge.challengerProfileId !== currentProfileId
+      : challenge.challengerProfileId === currentProfileId &&
+        challenge.opponentProfileId !== currentProfileId;
+
+  if (
+    !isValidDirection ||
+    !challenge.opponentProfileId ||
+    !counterpart?.profileId ||
+    counterpart.profileId === currentProfileId
+  ) {
+    return null;
+  }
+
+  return {
+    id: challenge.id,
+    sport: challenge.sport,
+    challengerProfileId: challenge.challengerProfileId,
+    opponentProfileId: challenge.opponentProfileId,
+    scheduledAt: challenge.scheduledAt,
+    locationName: challenge.locationName,
+    challengeType: challenge.challengeType,
+    stakeType: challenge.stakeType ?? DEFAULT_STAKE_TYPE,
+    stakeLabel: challenge.stakeLabel ?? DEFAULT_STAKE_LABEL,
+    stakeNote: challenge.stakeNote ?? undefined,
+    status: challenge.status,
+    createdAt: challenge.createdAt,
+    isOpen: challenge.isOpen,
+    counterpartProfileId: counterpart.profileId,
+    counterpartName: getCanonicalChallengeName(counterpart),
+    counterpartUsername: counterpart.username.trim() || undefined,
+    direction
+  };
+}
+
+export async function getChallengeInbox(currentProfileId: string): Promise<ChallengeInbox> {
+  const response = await invokeLoopTwoChallengeFunction<GetUserChallengesResponse>("get-user-challenges");
+  const canonicalChallenges = [
+    ...response.challenges,
+    ...(response.openChallenges ?? [])
+  ];
+  const items = canonicalChallenges
+    .filter((challenge) => challenge.status !== "declined" && challenge.status !== "canceled")
+    .map((challenge) => mapCanonicalChallengeInboxItem(challenge, currentProfileId))
+    .filter((challenge): challenge is ChallengeInboxItem => Boolean(challenge))
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+
+  return {
+    received: items.filter((challenge) => challenge.direction === "received"),
+    sent: items.filter((challenge) => challenge.direction === "sent")
+  };
 }
 
 async function updateChallengeStatus(
@@ -623,21 +656,11 @@ export async function getSentChallenges(profileId: string): Promise<Challenge[]>
 }
 
 export async function getReceivedChallengeInbox(profileId: string): Promise<ChallengeInboxItem[]> {
-  const challenges = await getReceivedChallenges(profileId);
-  return attachCounterpartNames(
-    challenges.filter((challenge) => challenge.status !== "declined" && challenge.status !== "canceled"),
-    profileId,
-    "received"
-  );
+  return (await getChallengeInbox(profileId)).received;
 }
 
 export async function getSentChallengeInbox(profileId: string): Promise<ChallengeInboxItem[]> {
-  const challenges = await getSentChallenges(profileId);
-  return attachCounterpartNames(
-    challenges.filter((challenge) => challenge.status !== "declined" && challenge.status !== "canceled"),
-    profileId,
-    "sent"
-  );
+  return (await getChallengeInbox(profileId)).sent;
 }
 
 export async function getPendingIncomingChallengeCount(profileId: string): Promise<number> {
