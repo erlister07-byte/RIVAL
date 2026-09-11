@@ -200,26 +200,6 @@ type CreateChallengeResponse = {
   challenge?: ChallengeRowWithSport;
 };
 
-type OpenChallengeRow = {
-  id: string;
-  challenger_profile_id: string;
-  scheduled_at: string;
-  location_name: string;
-  challenge_type: Database["public"]["Enums"]["challenge_type"];
-  stake_type: string;
-  stake_label: string;
-  stake_note: string | null;
-  created_at: string;
-  sport_id: number;
-  sports: SportRow | null;
-  challenger: {
-    id: string;
-    username: string | null;
-    display_name: string;
-    vancouver_area: string;
-  } | null;
-};
-
 function getRealtimeChallengeRow(
   payload: RealtimePostgresChangesPayload<Record<string, unknown>>
 ): Partial<ChallengeRow> | null {
@@ -277,26 +257,6 @@ function mapChallenge(row: ChallengeRowWithSport): Challenge {
     status: row.status,
     createdAt: row.created_at,
     isOpen: row.is_open
-  };
-}
-
-function mapOpenChallenge(row: OpenChallengeRow): OpenChallenge {
-  return {
-    id: row.id,
-    challengerProfileId: row.challenger_profile_id,
-    challengerUsername: row.challenger?.username ?? row.challenger?.display_name ?? "player",
-    challengerDisplayName: row.challenger?.display_name ?? row.challenger?.username ?? "Player",
-    challengerArea: row.challenger?.vancouver_area ?? "",
-    sportId: row.sport_id,
-    sport: row.sports?.slug ?? getSportConfigById(row.sport_id)?.slug ?? DEFAULT_LAUNCH_SPORT,
-    sportName: row.sports?.name ?? getSportConfigById(row.sport_id)?.displayName ?? "Sport",
-    scheduledAt: row.scheduled_at,
-    locationName: row.location_name,
-    challengeType: row.challenge_type,
-    stakeType: row.stake_type ?? DEFAULT_STAKE_TYPE,
-    stakeLabel: row.stake_label ?? DEFAULT_STAKE_LABEL,
-    stakeNote: row.stake_note ?? undefined,
-    createdAt: row.created_at
   };
 }
 
@@ -763,171 +723,15 @@ export async function getChallengesForProfile(profileId: string): Promise<Challe
   );
 }
 
-export async function getOpenChallenges(
-  currentProfileId: string,
-  sportId?: number,
-  currentArea?: string
-): Promise<OpenChallenge[]> {
+export async function getOpenChallenges(sport: Challenge["sport"]): Promise<OpenChallenge[]> {
   try {
-    let query = supabase
-      .from("challenges")
-      .select(`
-        id,
-        challenger_profile_id,
-        scheduled_at,
-        location_name,
-        challenge_type,
-        stake_type,
-        stake_label,
-        stake_note,
-        created_at,
-        sport_id,
-        sports(*),
-        challenger:profiles!challenges_challenger_profile_id_fkey (
-          id,
-          username,
-          display_name,
-          vancouver_area
-        )
-      `)
-      .eq("is_open", true)
-      .eq("status", "pending")
-      .is("opponent_profile_id", null)
-      .neq("challenger_profile_id", currentProfileId)
-      .gt("scheduled_at", new Date().toISOString())
-      .order("created_at", { ascending: false });
-
-    if (sportId) {
-      query = query.eq("sport_id", sportId);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      throw error;
-    }
-
-    const challenges = ((data ?? []) as OpenChallengeRow[]).map(mapOpenChallenge);
-
-    if (!currentArea) {
-      return challenges;
-    }
-
-    return challenges.sort((left, right) => {
-      const leftPriority = left.challengerArea === currentArea ? 0 : 1;
-      const rightPriority = right.challengerArea === currentArea ? 0 : 1;
-
-      if (leftPriority !== rightPriority) {
-        return leftPriority - rightPriority;
-      }
-
-      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
-    });
+    const response = await getLoopTwoOpenChallenges(sport);
+    return response.challenges;
   } catch (error) {
     debugError("[challengeService] failed to load open challenges", error, {
-      currentProfileId,
-      sportId: sportId ?? null
+      sport
     });
     throw toServiceError(error, "Unable to load open challenges right now.");
-  }
-}
-
-export async function acceptOpenChallenge(challengeId: string, accepterProfileId: string): Promise<Challenge> {
-  try {
-    const { data, error } = await supabase
-      .from("challenges")
-      .update({
-        opponent_profile_id: accepterProfileId,
-        status: "accepted",
-        accepted_at: new Date().toISOString()
-      })
-      .eq("id", challengeId)
-      .eq("is_open", true)
-      .eq("status", "pending")
-      .is("opponent_profile_id", null)
-      .neq("challenger_profile_id", accepterProfileId)
-      .select("*, sports(*)");
-
-    if (error) {
-      throw error;
-    }
-
-    if (!data || data.length === 0) {
-      const { data: existingChallenge, error: existingChallengeError } = await supabase
-        .from("challenges")
-        .select("id, challenger_profile_id, is_open, status, opponent_profile_id")
-        .eq("id", challengeId)
-        .maybeSingle();
-
-      if (existingChallengeError) {
-        throw existingChallengeError;
-      }
-
-      if (!existingChallenge) {
-        throw new Error("Challenge not found.");
-      }
-
-      if (existingChallenge.challenger_profile_id === accepterProfileId) {
-        throw new Error("You cannot accept your own open challenge.");
-      }
-
-      if (!existingChallenge.is_open) {
-        throw new Error("This challenge is not open.");
-      }
-
-      if (existingChallenge.status !== "pending" || existingChallenge.opponent_profile_id) {
-        throw new Error("This open challenge is no longer available.");
-      }
-
-      throw new Error("Unable to join this challenge right now.");
-    }
-
-    if (data.length > 1) {
-      throw new Error(`Expected one open challenge row for id ${challengeId}, received ${data.length}.`);
-    }
-
-    const challengeRow = data[0] as ChallengeRowWithSport;
-
-    try {
-      if (!challengeRow.opponent_profile_id) {
-        throw new Error("Accepted open challenge is missing an opponent.");
-      }
-
-      const { challengerName, opponentName } = await getParticipantNames(
-        challengeRow.challenger_profile_id,
-        challengeRow.opponent_profile_id
-      );
-
-      const metadata: Json = {
-        actor_display_name: opponentName,
-        opponent_display_name: challengerName,
-        target_display_name: challengerName,
-        sport_name: challengeRow.sports?.name,
-        location: challengeRow.location_name,
-        challenge_location: challengeRow.location_name
-      };
-
-      await createActivityEvent({
-        actorProfileId: challengeRow.opponent_profile_id,
-        targetProfileId: challengeRow.challenger_profile_id,
-        challengeId: challengeRow.id,
-        sportId: challengeRow.sports?.id ?? null,
-        eventType: "challenge_accepted",
-        metadata
-      });
-    } catch (activityError) {
-      debugError("Failed to log open challenge accepted activity", activityError, {
-        challengeId: challengeRow.id
-      });
-    }
-
-    return mapChallenge(challengeRow);
-  } catch (error) {
-    debugError("[challengeService] failed to accept open challenge", error, {
-      challengeId,
-      accepterProfileId
-    });
-    throw toServiceError(error, "Unable to join this challenge right now.");
   }
 }
 

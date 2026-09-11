@@ -20,7 +20,6 @@ import {
 } from "@/core/types/models";
 import {
   acceptLoopTwoOpenChallenge,
-  acceptOpenChallenge,
   cancelLoopTwoOpenChallenge,
   getLoopTwoOpenChallenges,
   getOpenChallenges
@@ -157,11 +156,7 @@ function NearbyPlayersContent({
           const loopTwoChallenges = sandboxMode === "loop-02"
             ? await getLoopTwoOpenChallenges(sport)
             : null;
-          const nextChallenges = loopTwoChallenges?.challenges ?? await getOpenChallenges(
-            currentUser.id,
-            getSportIdBySlug(sport),
-            currentUser.vancouverArea
-          );
+          const nextChallenges = loopTwoChallenges?.challenges ?? await getOpenChallenges(sport);
 
           if (isActive) {
             setOpenChallenges(nextChallenges);
@@ -254,11 +249,7 @@ function NearbyPlayersContent({
     setActionError("");
 
     try {
-      if (sandboxMode === "loop-02") {
-        await acceptLoopTwoOpenChallenge(challenge.id);
-      } else {
-        await acceptOpenChallenge(challenge.id, currentUser.id);
-      }
+      await acceptLoopTwoOpenChallenge(challenge.id);
       setOpenChallenges((current) => current.filter((item) => item.id !== challenge.id));
       onOpenChallengeAccepted?.();
     } catch (joinError) {
