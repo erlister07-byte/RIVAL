@@ -27,6 +27,8 @@ export function LeaderboardScreen({ navigation }: Props) {
   const [loadingSports, setLoadingSports] = useState(true);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   const [error, setError] = useState("");
+  const [leaderboardReloadKey, setLeaderboardReloadKey] = useState(0);
+  const selectedSport = sports.find((sport) => String(sport.id) === selectedSportId);
 
   if (!currentUser?.id && isHydratingProfile) {
     return (
@@ -82,7 +84,7 @@ export function LeaderboardScreen({ navigation }: Props) {
     let isActive = true;
 
     async function loadLeaderboard() {
-      if (!currentUser?.id || !selectedSportId) {
+      if (!currentUser?.id || !selectedSport?.slug) {
         if (isActive) {
           setLeaderboard([]);
           setCurrentUserEntry(null);
@@ -95,7 +97,7 @@ export function LeaderboardScreen({ navigation }: Props) {
       setError("");
 
       try {
-        const result = await getLeaderboardBySport(selectedSportId, currentUser.id);
+        const result = await getLeaderboardBySport(selectedSport.slug, currentUser.id);
 
         if (!isActive) {
           return;
@@ -125,7 +127,7 @@ export function LeaderboardScreen({ navigation }: Props) {
     return () => {
       isActive = false;
     };
-  }, [currentUser?.id, selectedSportId]);
+  }, [currentUser?.id, leaderboardReloadKey, selectedSport?.slug]);
 
   function renderRow({ item }: { item: LeaderboardEntry }) {
     return (
@@ -178,12 +180,19 @@ export function LeaderboardScreen({ navigation }: Props) {
         <Card>
           <Text style={styles.errorTitle}>Could not load leaderboard</Text>
           <Text style={styles.stateText}>{getDiagnosticErrorMessage(error, "Unable to load leaderboard right now.")}</Text>
+          {selectedSport ? (
+            <Button
+              label="Retry"
+              tone="secondary"
+              onPress={() => setLeaderboardReloadKey((current) => current + 1)}
+            />
+          ) : null}
         </Card>
       ) : leaderboard.length === 0 ? (
         <Card>
           <EmptyState
             title="No one is on the board yet"
-            description="Play your first confirmed match to get this pickleball leaderboard started."
+            description={`No players are on the ${selectedSport?.name ?? "selected sport"} leaderboard yet.`}
           />
           <Button label="Challenge a Player" onPress={() => navigation.navigate("CreateChallenge")} />
         </Card>

@@ -1,20 +1,26 @@
 import { LeaderboardEntry } from "@/core/types/models";
 import { Database } from "@/types/database";
 
+import { getAuthenticatedRequestHeaders } from "./authSession";
 import { supabase } from "./supabaseClient";
 
 type SportRow = Database["public"]["Tables"]["sports"]["Row"];
 
-type LeaderboardProfileRow = {
-  profile_id: string;
-  profiles: {
-    display_name: string;
-    profile_stats:
-      | Array<{
-          matches_played: number | null;
-        }>
-      | null;
-  } | null;
+type LeaderboardResponseEntry = {
+  rank: number;
+  profileId: string;
+  displayName: string;
+  username: string;
+  matchesPlayed: number;
+};
+
+type LeaderboardResponse = {
+  sport: {
+    id: number;
+    slug: string;
+    name: string;
+  };
+  entries: LeaderboardResponseEntry[];
 };
 
 export async function getAvailableLeaderboardSports(): Promise<SportRow[]> {
@@ -30,38 +36,43 @@ export async function getAvailableLeaderboardSports(): Promise<SportRow[]> {
   return (data ?? []) as SportRow[];
 }
 
-export async function getLeaderboardBySport(sportId: string, currentUserId: string): Promise<{
+export async function getLeaderboardBySport(sport: string, currentUserId: string): Promise<{
   leaderboard: LeaderboardEntry[];
   currentUserEntry: LeaderboardEntry | null;
 }> {
-  const { data, error } = await supabase
-    .from("profile_sports")
-    .select("profile_id, profiles!inner(display_name, profile_stats(matches_played))")
-    .eq("sport_id", Number(sportId))
-    .eq("is_active", true);
+  const supabaseProjectUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (error) {
-    throw error;
+  if (!supabaseProjectUrl || !supabaseAnonKey) {
+    throw new Error("Supabase is not configured.");
   }
 
-  const leaderboard = ((data ?? []) as LeaderboardProfileRow[])
-    .map((row) => ({
-      profile_id: row.profile_id,
-      display_name: row.profiles?.display_name ?? "Player",
-      matches_played: row.profiles?.profile_stats?.[0]?.matches_played ?? 0,
-      rank: 0
-    }))
-    .sort((left, right) => {
-      if (left.matches_played !== right.matches_played) {
-        return right.matches_played - left.matches_played;
-      }
+  const authHeaders = await getAuthenticatedRequestHeaders();
+  const response = await fetch(`${supabaseProjectUrl}/functions/v1/get-leaderboard`, {
+    method: "POST",
+    headers: {
+      ...authHeaders,
+      apikey: supabaseAnonKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ sport })
+  });
+  const payload = (await response.json().catch(() => null)) as (LeaderboardResponse & { error?: string }) | null;
 
-      return left.display_name.localeCompare(right.display_name);
-    })
-    .map((entry, index) => ({
-      ...entry,
-      rank: index + 1
-    }));
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `Unable to load leaderboard (${response.status}).`);
+  }
+
+  if (!payload || !Array.isArray(payload.entries)) {
+    throw new Error("Leaderboard service returned an invalid response.");
+  }
+
+  const leaderboard = payload.entries.map((entry) => ({
+    profile_id: entry.profileId,
+    display_name: entry.displayName,
+    matches_played: entry.matchesPlayed,
+    rank: entry.rank
+  }));
 
   return {
     leaderboard,
