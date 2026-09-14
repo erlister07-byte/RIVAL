@@ -3,14 +3,13 @@ import { CompositeScreenProps } from "@react-navigation/native";
 import { useIsFocused } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, AppState, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, Platform, StyleSheet, Text, View } from "react-native";
 
 import { AppStackParamList, LoopTwoStackParamList, MainTabParamList } from "@/application/navigation/types";
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
 import { getChallengeTypeLabel, getStakeDisplay } from "@/core/types/models";
 import {
-  cancelChallenge,
   getChallengeInbox,
   getChallengeInboxActivitySummary,
   ChallengeInboxItem,
@@ -358,7 +357,7 @@ export function ChallengeInboxScreen({ navigation }: Props) {
     clearSuccess();
 
     try {
-      await cancelChallenge(challenge.id, currentUser.id);
+      await respondToLoopTwoChallenge(challenge.id, "cancel");
 
       setSentChallenges((current) => current.filter((item) => item.id !== challenge.id));
       showSuccess("Challenge cancelled.");
@@ -374,9 +373,19 @@ export function ChallengeInboxScreen({ navigation }: Props) {
   }
 
   function confirmCancelChallenge(challenge: ChallengeInboxItem) {
+    const title = "Cancel this challenge?";
+    const message = "This will remove the challenge before it’s accepted.";
+
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm(`${title}\n\n${message}`)) {
+        void handleCancelChallenge(challenge);
+      }
+      return;
+    }
+
     Alert.alert(
-      "Cancel this challenge?",
-      "This will remove the challenge before it’s accepted.",
+      title,
+      message,
       [
         {
           text: "Keep Challenge",
