@@ -1,5 +1,18 @@
 export type SportSlug = "golf" | "tennis" | "pickleball" | "volleyball" | "basketball" | "running";
 export type SkillLevel = "beginner" | "intermediate" | "advanced" | "competitive";
+
+export const skillLevelOptions: ReadonlyArray<{ value: SkillLevel; label: string }> = [
+  { value: "beginner", label: "Beginner" },
+  { value: "intermediate", label: "Intermediate" },
+  { value: "advanced", label: "Advanced" },
+  { value: "competitive", label: "Competitive" }
+];
+
+const skillLevelLabels = new Map(skillLevelOptions.map((option) => [option.value, option.label]));
+
+export function getSkillLevelLabel(value: SkillLevel) {
+  return skillLevelLabels.get(value) ?? value;
+}
 export type AvailabilityStatus = "now" | "today" | "this_week" | "unavailable";
 export type ChallengeStatus = "pending" | "accepted" | "declined" | "completed" | "canceled";
 export type ChallengeType = "casual" | "practice" | "ranked";

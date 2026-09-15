@@ -30,6 +30,7 @@ import {
   createUserProfile,
   getCurrentUserProfile,
   getProfileStats,
+  updateProfileSportSkillLevel,
   updateUserProfile
 } from "@/services/userService";
 import { normalizeEmail } from "@/shared/lib/authValidation";
@@ -102,6 +103,7 @@ type AppContextValue = {
   refreshAuthUser: () => Promise<void>;
   completeOnboarding: (input: OnboardingInput) => Promise<void>;
   updateAvailability: (availabilityStatus: AvailabilityStatus) => Promise<void>;
+  updateSkillLevel: (sport: SportSlug, skillLevel: SkillLevel) => Promise<void>;
   createChallenge: (input: ChallengeInput) => Promise<Challenge>;
   respondToChallenge: (challengeId: string, status: "accepted" | "declined") => Promise<void>;
   submitResult: (input: ResultInput) => Promise<Match>;
@@ -562,6 +564,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRecentMatches(await getRecentMatches(profile.id));
   }
 
+  async function updateSkillLevel(sport: SportSlug, skillLevel: SkillLevel) {
+    if (!currentUser) {
+      throw new Error("You must be logged in to update your skill level.");
+    }
+
+    const sportId = getSportIdBySlug(sport);
+    const currentSport = currentUser.sports.find((item) => item.sport === sport);
+
+    if (!sportId || !currentSport) {
+      throw new Error("That sport is not available on your profile.");
+    }
+
+    try {
+      const updatedSport = await updateProfileSportSkillLevel(currentUser.id, sportId, skillLevel);
+
+      setCurrentUser((previous) =>
+        previous?.id === currentUser.id
+          ? {
+              ...previous,
+              sports: previous.sports.map((item) =>
+                item.sport === sport
+                  ? { ...item, skillLevel: updatedSport.skill_level }
+                  : item
+              )
+            }
+          : previous
+      );
+    } catch (error) {
+      debugError("[AppProvider] updateSkillLevel failed", error, {
+        profileId: currentUser.id,
+        sport,
+        sportId
+      });
+      throw toServiceError(error, "Unable to update skill level.");
+    }
+  }
+
   async function createChallenge(input: ChallengeInput) {
     if (!currentUser) {
       throw new Error("You must be logged in to create a challenge.");
@@ -833,6 +872,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshAuthUser,
       completeOnboarding,
       updateAvailability,
+      updateSkillLevel,
       createChallenge,
       respondToChallenge,
       submitResult,
@@ -847,6 +887,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isBooting,
       isHydratingProfile,
       matches,
+      updateSkillLevel,
       updateAvailability,
       refreshAuthUser,
       requestPasswordReset,

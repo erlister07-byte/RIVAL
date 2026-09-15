@@ -11,7 +11,7 @@ import {
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
 import { DEFAULT_LAUNCH_SPORT, SPORT_CONFIGS, isSportEnabled } from "@/config/sports";
-import { SkillLevel, SportSlug } from "@/core/types/models";
+import { SkillLevel, SportSlug, skillLevelOptions } from "@/core/types/models";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
 import { Chip } from "@/shared/components/Chip";
@@ -42,8 +42,6 @@ const AREA_ICON_MAP = {
   Burnaby: Building2,
   Richmond: MapPinned
 } as const;
-
-const SKILL_OPTIONS: SkillLevel[] = ["beginner", "intermediate", "advanced", "competitive"];
 
 type OnboardingSportRowProps = {
   sport: SportSlug;
@@ -308,13 +306,13 @@ export function OnboardingScreen() {
           <View key={sport.slug} style={styles.skillRow}>
             <Text style={styles.skillTitle}>{sport.displayName} skill</Text>
             <View style={styles.wrap}>
-              {SKILL_OPTIONS.map((skill) => (
+              {skillLevelOptions.map((option) => (
                 <Chip
-                  key={`${sport.slug}-${skill}`}
-                  label={skill}
-                  selected={selectedSports[sport.slug] === skill}
+                  key={`${sport.slug}-${option.value}`}
+                  label={option.label}
+                  selected={selectedSports[sport.slug] === option.value}
                   onPress={() =>
-                    setSelectedSports((previous) => ({ ...previous, [sport.slug]: skill }))
+                    setSelectedSports((previous) => ({ ...previous, [sport.slug]: option.value }))
                   }
                 />
               ))}

@@ -1,4 +1,4 @@
-import { AvailabilityStatus, PlayStyleTag, PlayerSummary, Profile } from "@/core/types/models";
+import { AvailabilityStatus, PlayStyleTag, PlayerSummary, Profile, SkillLevel } from "@/core/types/models";
 import { Database } from "@/types/database";
 import { isMissingColumnError, withOptionalFieldFallback } from "@/shared/lib/schemaDrift";
 import { debugLog } from "@/shared/lib/logger";
@@ -10,6 +10,7 @@ import { supabase } from "./supabaseClient";
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
 type ProfileSportRow = Database["public"]["Tables"]["profile_sports"]["Row"];
+type ProfileSportUpdate = Database["public"]["Tables"]["profile_sports"]["Update"];
 type SportRow = Database["public"]["Tables"]["sports"]["Row"];
 type ProfileStatsRow = Database["public"]["Tables"]["profile_stats"]["Row"];
 
@@ -417,6 +418,33 @@ export async function updateUserProfile(
   }
 
   return profile;
+}
+
+export async function updateProfileSportSkillLevel(
+  profileId: string,
+  sportId: number,
+  skillLevel: SkillLevel
+) {
+  const updatePayload: Pick<ProfileSportUpdate, "skill_level"> = {
+    skill_level: skillLevel
+  };
+  const { data, error } = await supabase
+    .from("profile_sports")
+    .update(updatePayload)
+    .eq("profile_id", profileId)
+    .eq("sport_id", sportId)
+    .select("profile_id, sport_id, skill_level, is_active")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error("Profile sport not found after skill-level update.");
+  }
+
+  return data;
 }
 
 export async function searchProfilesByUsername(

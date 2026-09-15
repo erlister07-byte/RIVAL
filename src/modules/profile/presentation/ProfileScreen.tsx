@@ -12,9 +12,13 @@ import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
 import { SPORT_CONFIGS, getSportIdBySlug, isSportEnabled } from "@/config/sports";
 import {
+  getSkillLevelLabel,
   Profile,
   RecentMatch,
-  RivalryRecord
+  RivalryRecord,
+  SkillLevel,
+  SportSlug,
+  skillLevelOptions
 } from "@/core/types/models";
 import { getCurrentWinStreakForSport, getRecentMatches, subscribeToMatchActivity } from "@/services/matchService";
 import { formatRivalrySummary, getTopRivalries } from "@/services/rivalryService";
@@ -44,7 +48,7 @@ function getWinStreakCopy(streak: number) {
 }
 
 export function ProfileScreen({ navigation }: Props) {
-  const { currentUser, logout, isHydratingProfile } = useAppState();
+  const { currentUser, logout, isHydratingProfile, updateSkillLevel } = useAppState();
   const isFocused = useIsFocused();
   const appNavigation = navigation.getParent<NativeStackNavigationProp<AppStackParamList>>();
   const [stats, setStats] = useState<Pick<Profile, "wins" | "losses" | "draws" | "matchesPlayed" | "xp">>({
@@ -66,6 +70,11 @@ export function ProfileScreen({ navigation }: Props) {
   const [avatarVersion, setAvatarVersion] = useState<string | null>(null);
   const [avatarMessage, setAvatarMessage] = useState("");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [editingSkillSport, setEditingSkillSport] = useState<SportSlug | null>(null);
+  const [selectedSkillLevel, setSelectedSkillLevel] = useState<SkillLevel | null>(null);
+  const [savingSkillLevel, setSavingSkillLevel] = useState(false);
+  const [skillLevelError, setSkillLevelError] = useState("");
+  const [skillLevelMessage, setSkillLevelMessage] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const levelProgress = getLevelProgress(stats.xp);
   const streakSport = SPORT_CONFIGS.find(
@@ -266,6 +275,56 @@ export function ProfileScreen({ navigation }: Props) {
 
     await Clipboard.setStringAsync(currentUser.username.trim());
     setCopyMessage("Username copied");
+  }
+
+  function beginSkillLevelEdit(sport: SportSlug, currentSkillLevel: SkillLevel) {
+    setEditingSkillSport(sport);
+    setSelectedSkillLevel(currentSkillLevel);
+    setSkillLevelError("");
+    setSkillLevelMessage("");
+  }
+
+  function cancelSkillLevelEdit() {
+    if (savingSkillLevel) {
+      return;
+    }
+
+    setEditingSkillSport(null);
+    setSelectedSkillLevel(null);
+    setSkillLevelError("");
+  }
+
+  async function handleSaveSkillLevel() {
+    if (!editingSkillSport || !selectedSkillLevel || savingSkillLevel) {
+      return;
+    }
+
+    const currentSkillLevel = currentUser?.sports.find(
+      (item) => item.sport === editingSkillSport
+    )?.skillLevel;
+
+    if (!currentSkillLevel || currentSkillLevel === selectedSkillLevel) {
+      return;
+    }
+
+    const sportName = SPORT_CONFIGS.find((sport) => sport.slug === editingSkillSport)?.displayName ?? "Sport";
+    setSavingSkillLevel(true);
+    setSkillLevelError("");
+
+    try {
+      await updateSkillLevel(editingSkillSport, selectedSkillLevel);
+      setSkillLevelMessage(`${sportName} Skill Level updated to ${getSkillLevelLabel(selectedSkillLevel)}.`);
+      setEditingSkillSport(null);
+      setSelectedSkillLevel(null);
+    } catch (saveError) {
+      debugError("[ProfileScreen] skill-level update failed", saveError, {
+        profileId: currentUser?.id,
+        sport: editingSkillSport
+      });
+      setSkillLevelError("Unable to update Skill Level right now. Please try again.");
+    } finally {
+      setSavingSkillLevel(false);
+    }
   }
 
   async function uploadAvatarResult(result: ImagePicker.ImagePickerResult) {
@@ -605,6 +664,11 @@ export function ProfileScreen({ navigation }: Props) {
         <Text style={styles.sectionHeader}>Sports</Text>
         {SPORT_CONFIGS.map((sport) => {
           const activeSport = currentUser?.sports.find((item) => item.sport === sport.slug);
+          const isEditingSkillLevel = editingSkillSport === sport.slug;
+          const canEditSkillLevel = Boolean(activeSport && sport.enabled);
+          const hasSkillLevelChange = Boolean(
+            activeSport && selectedSkillLevel && selectedSkillLevel !== activeSport.skillLevel
+          );
 
           return (
             <View
@@ -614,16 +678,108 @@ export function ProfileScreen({ navigation }: Props) {
                 sport.enabled ? styles.sportRowActive : styles.sportRowDisabled
               ]}
             >
-              <View style={styles.sportRowTitle}>
-                <SportBadge sport={sport.slug} size="small" isEnabled={sport.enabled} />
-                <Text style={[styles.rowText, !sport.enabled ? styles.rowTextDisabled : styles.rowTextActive]}>{sport.displayName}</Text>
+              <View style={styles.sportRowHeader}>
+                <View style={styles.sportRowTitle}>
+                  <SportBadge sport={sport.slug} size="small" isEnabled={sport.enabled} />
+                  <Text style={[styles.rowText, !sport.enabled ? styles.rowTextDisabled : styles.rowTextActive]}>{sport.displayName}</Text>
+                </View>
+                {canEditSkillLevel && activeSport ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${sport.displayName} Skill Level`}
+                    disabled={savingSkillLevel}
+                    onPress={() => beginSkillLevelEdit(sport.slug, activeSport.skillLevel)}
+                    style={({ pressed }) => [
+                      styles.skillEditButton,
+                      pressed && !savingSkillLevel ? styles.copyButtonPressed : null,
+                      savingSkillLevel ? styles.copyButtonDisabled : null
+                    ]}
+                  >
+                    <Text style={styles.skillEditButtonText}>Edit Skill Level</Text>
+                  </Pressable>
+                ) : null}
               </View>
               <Text style={styles.rowMeta}>
-                {activeSport ? `${activeSport.skillLevel} · ${sport.enabled ? "live" : "coming soon"}` : sport.cityAvailability}
+                {activeSport ? `${getSkillLevelLabel(activeSport.skillLevel)} · ${sport.enabled ? "live" : "coming soon"}` : sport.cityAvailability}
               </Text>
+              {isEditingSkillLevel && activeSport ? (
+                <View style={styles.skillEditor}>
+                  <Text style={styles.skillEditorTitle}>{sport.displayName} Skill Level</Text>
+                  <Text style={styles.rowMeta}>Current: {getSkillLevelLabel(activeSport.skillLevel)}</Text>
+                  <View accessibilityRole="radiogroup" style={styles.skillOptions}>
+                    {skillLevelOptions.map((option) => {
+                      const isSelected = selectedSkillLevel === option.value;
+
+                      return (
+                        <Pressable
+                          key={`${sport.slug}-${option.value}`}
+                          accessibilityRole="radio"
+                          accessibilityLabel={`${option.label} Skill Level`}
+                          accessibilityState={{ checked: isSelected, disabled: savingSkillLevel }}
+                          aria-checked={isSelected}
+                          aria-disabled={savingSkillLevel}
+                          disabled={savingSkillLevel}
+                          onPress={() => {
+                            setSelectedSkillLevel(option.value);
+                            setSkillLevelError("");
+                          }}
+                          style={({ pressed }) => [
+                            styles.skillOption,
+                            isSelected ? styles.skillOptionSelected : null,
+                            pressed && !savingSkillLevel ? styles.skillOptionPressed : null,
+                            savingSkillLevel ? styles.copyButtonDisabled : null
+                          ]}
+                        >
+                          <Text style={[styles.skillOptionText, isSelected ? styles.skillOptionTextSelected : null]}>
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  {skillLevelError ? <Text style={styles.skillLevelError}>{skillLevelError}</Text> : null}
+                  <View style={styles.skillActions}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Cancel Skill Level edit"
+                      accessibilityState={{ disabled: savingSkillLevel }}
+                      disabled={savingSkillLevel}
+                      onPress={cancelSkillLevelEdit}
+                      style={({ pressed }) => [
+                        styles.skillAction,
+                        styles.skillActionSecondary,
+                        pressed && !savingSkillLevel ? styles.skillActionPressed : null,
+                        savingSkillLevel ? styles.skillActionDisabled : null
+                      ]}
+                    >
+                      <Text style={styles.skillActionSecondaryText}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Save Skill Level"
+                      accessibilityState={{ disabled: !hasSkillLevelChange || savingSkillLevel, busy: savingSkillLevel }}
+                      disabled={!hasSkillLevelChange || savingSkillLevel}
+                      onPress={() => void handleSaveSkillLevel()}
+                      style={({ pressed }) => [
+                        styles.skillAction,
+                        styles.skillActionPrimary,
+                        pressed && hasSkillLevelChange && !savingSkillLevel ? styles.skillActionPressed : null,
+                        !hasSkillLevelChange || savingSkillLevel ? styles.skillActionDisabled : null
+                      ]}
+                    >
+                      {savingSkillLevel ? (
+                        <ActivityIndicator color={colors.white} />
+                      ) : (
+                        <Text style={styles.skillActionPrimaryText}>Save</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
             </View>
           );
         })}
+        {skillLevelMessage ? <Text style={styles.skillLevelSuccess}>{skillLevelMessage}</Text> : null}
       </Card>
 
       <Card>
@@ -921,7 +1077,119 @@ const styles = StyleSheet.create({
   sportRowTitle: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs
+    gap: spacing.xs,
+    flex: 1
+  },
+  sportRowHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm
+  },
+  skillEditButton: {
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white
+  },
+  skillEditButtonText: {
+    color: colors.accent,
+    fontWeight: "700",
+    fontSize: typography.caption
+  },
+  skillEditor: {
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface
+  },
+  skillEditorTitle: {
+    color: colors.text,
+    fontWeight: "700",
+    fontSize: typography.bodyStrong
+  },
+  skillOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm
+  },
+  skillOption: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white
+  },
+  skillOptionSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft
+  },
+  skillOptionPressed: {
+    opacity: 0.92
+  },
+  skillOptionText: {
+    color: colors.text,
+    fontWeight: "700",
+    fontSize: typography.caption
+  },
+  skillOptionTextSelected: {
+    color: colors.primary
+  },
+  skillActions: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  skillAction: {
+    flex: 1,
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm
+  },
+  skillActionPrimary: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary
+  },
+  skillActionSecondary: {
+    borderColor: colors.border,
+    backgroundColor: colors.white
+  },
+  skillActionPrimaryText: {
+    color: colors.white,
+    fontWeight: "700",
+    fontSize: typography.bodyStrong
+  },
+  skillActionSecondaryText: {
+    color: colors.accent,
+    fontWeight: "700",
+    fontSize: typography.bodyStrong
+  },
+  skillActionPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.98 }]
+  },
+  skillActionDisabled: {
+    opacity: 0.55
+  },
+  skillLevelError: {
+    color: colors.danger,
+    fontSize: typography.caption
+  },
+  skillLevelSuccess: {
+    color: colors.success,
+    fontWeight: "600",
+    fontSize: typography.caption
   },
   rowTextActive: {
     color: colors.primary
