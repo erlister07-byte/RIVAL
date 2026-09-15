@@ -1,4 +1,4 @@
-import { AvailabilityStatus, PlayStyleTag, PlayerSummary, Profile, normalizePlayStyleTags } from "@/core/types/models";
+import { AvailabilityStatus, PlayStyleTag, PlayerSummary, Profile } from "@/core/types/models";
 import { Database } from "@/types/database";
 import { isMissingColumnError, withOptionalFieldFallback } from "@/shared/lib/schemaDrift";
 import { debugLog } from "@/shared/lib/logger";
@@ -37,7 +37,6 @@ export type UpdateUserProfileInput = {
   latitude?: number | null;
   longitude?: number | null;
   onboardingCompleted?: boolean;
-  playStyleTags?: PlayStyleTag[];
   sports?: Array<{
     sportId: number;
     skillLevel: Database["public"]["Enums"]["skill_level"];
@@ -87,7 +86,6 @@ type FriendSearchRow = {
         } | null;
       }>
     | null;
-  play_style_tags?: string[] | null;
 };
 
 type FriendSearchResponse = {
@@ -111,11 +109,7 @@ function isMissingAvailabilityColumnError(error: unknown) {
   return isMissingColumnError(error, "availability_status");
 }
 
-function isMissingPlayStyleTagsColumnError(error: unknown) {
-  return isMissingColumnError(error, "play_style_tags");
-}
-
-function getProfileSelect(includeAvailabilityStatus = true, includePlayStyleTags = true) {
+function getProfileSelect(includeAvailabilityStatus = true) {
   // Keep optional profile fields isolated here so a missing migration can retry cleanly
   // without breaking the rest of the profile payload.
   return `
@@ -126,7 +120,6 @@ function getProfileSelect(includeAvailabilityStatus = true, includePlayStyleTags
       vancouver_area,
       challenge_radius_km,
       ${includeAvailabilityStatus ? "availability_status," : ""}
-      ${includePlayStyleTags ? "play_style_tags," : ""}
       onboarding_completed,
       profile_sports (
         profile_id,
@@ -145,14 +138,14 @@ function mapProfile(row: ProfileWithRelations): Profile {
 
   return {
     ...playerSummary,
-    authUserId: row.auth_user_id ?? undefined,
+    authUserId: row.auth_user_id,
     email: row.email ?? "",
     xp: Number.isFinite(stats?.xp) ? stats?.xp ?? 0 : 0,
     vancouverArea: row.vancouver_area,
     challengeRadiusKm: row.challenge_radius_km,
     availabilityStatus: withOptionalFieldFallback(row.availability_status as AvailabilityStatus | null, "unavailable"),
     onboardingCompleted: row.onboarding_completed,
-    playStyleTags: normalizePlayStyleTags(row.play_style_tags),
+    playStyleTags: [],
     sports:
       row.profile_sports?.flatMap((item) =>
         item.sports
@@ -332,17 +325,17 @@ export async function getUserProfile({
   }
 
   let { data, error } = await applyProfileFilter(
-    supabase.from("profiles").select(getProfileSelect(true, true))
+    supabase.from("profiles").select(getProfileSelect(true))
   ).maybeSingle<ProfileWithRelations>();
 
-  if (error && (isMissingAvailabilityColumnError(error) || isMissingPlayStyleTagsColumnError(error))) {
+  if (error && isMissingAvailabilityColumnError(error)) {
     debugLog("[userService] profile select fallback without optional profile fields", {
       profileId: profileId ?? null,
       authUserId: authUserId ?? null
     });
     ({ data, error } = await applyProfileFilter(
       supabase.from("profiles").select(
-        getProfileSelect(!isMissingAvailabilityColumnError(error), !isMissingPlayStyleTagsColumnError(error))
+        getProfileSelect(false)
       )
     ).maybeSingle<ProfileWithRelations>());
   }
@@ -359,19 +352,11 @@ export async function getUserProfile({
 }
 
 export async function getPlayerById(profileId: string): Promise<PlayerSummary | null> {
-  let { data, error } = await supabase
+  const { data, error } = await supabase
     .from("profiles")
-    .select("id, username, display_name, play_style_tags, profile_stats(profile_id, wins, losses, draws, matches_played)")
+    .select("id, username, display_name, profile_stats(profile_id, wins, losses, draws, matches_played)")
     .eq("id", profileId)
     .maybeSingle();
-
-  if (error && isMissingPlayStyleTagsColumnError(error)) {
-    ({ data, error } = await supabase
-      .from("profiles")
-      .select("id, username, display_name, profile_stats(profile_id, wins, losses, draws, matches_played)")
-      .eq("id", profileId)
-      .maybeSingle());
-  }
 
   if (error) {
     throw error;
@@ -396,19 +381,17 @@ export async function updateUserProfile(
     availability_status: input.availabilityStatus,
     latitude: input.latitude,
     longitude: input.longitude,
-    play_style_tags: input.playStyleTags,
     onboarding_completed: input.onboardingCompleted
   };
 
   let { error } = await supabase.from("profiles").update(updatePayload).eq("id", profileId);
 
-  if (error && (isMissingAvailabilityColumnError(error) || isMissingPlayStyleTagsColumnError(error))) {
+  if (error && isMissingAvailabilityColumnError(error)) {
     debugLog("[userService] update profile fallback without optional profile fields", {
       profileId
     });
     const {
       availability_status: _ignoredAvailabilityStatus,
-      play_style_tags: _ignoredPlayStyleTags,
       ...legacyUpdatePayload
     } = updatePayload;
 
@@ -491,7 +474,7 @@ export async function searchProfilesByUsername(
       displayName: row.display_name,
       vancouverArea: row.vancouver_area,
       availabilityStatus: withOptionalFieldFallback(row.availability_status as AvailabilityStatus | null, "unavailable"),
-      playStyleTags: normalizePlayStyleTags(row.play_style_tags),
+      playStyleTags: [],
       matchesPlayed: stats?.matches_played ?? 0,
       primarySport: activeSport?.sports?.slug ?? undefined,
       primarySkillLevel: activeSport?.skill_level

@@ -1,6 +1,6 @@
 import { ActivityEvent, ActivityEventType, ActivityFeedItem, SportSlug } from "@/core/types/models";
 import { getAuthenticatedRequestHeaders } from "@/services/authSession";
-import { Database, Json } from "@/types/database";
+import { Database } from "@/types/database";
 import { debugError, debugLog, getSafeErrorPayload } from "@/shared/lib/logger";
 import { toServiceError } from "@/shared/lib/serviceError";
 
@@ -17,16 +17,6 @@ type FeedOptions = {
   limit?: number;
 };
 
-export type CreateActivityEventInput = {
-  actorProfileId: string;
-  targetProfileId?: string | null;
-  challengeId?: string | null;
-  matchId?: string | null;
-  sportId?: number | null;
-  eventType: ActivityEventType;
-  metadata?: Json;
-};
-
 function mapActivityEvent(row: ActivityEventFeedRow): ActivityEvent {
   return {
     id: row.id,
@@ -39,37 +29,6 @@ function mapActivityEvent(row: ActivityEventFeedRow): ActivityEvent {
     metadata: (row.metadata as Record<string, unknown>) ?? {},
     createdAt: row.created_at
   };
-}
-
-export async function createActivityEvent(input: CreateActivityEventInput): Promise<void> {
-  debugLog("[activityService] creating activity event", {
-    actorProfileId: input.actorProfileId,
-    targetProfileId: input.targetProfileId ?? null,
-    challengeId: input.challengeId ?? null,
-    matchId: input.matchId ?? null,
-    eventType: input.eventType
-  });
-
-  const { error } = await supabase.rpc("insert_activity_event", {
-    actor_profile_id_param: input.actorProfileId,
-    target_profile_id_param: input.targetProfileId ?? null,
-    challenge_id_param: input.challengeId ?? null,
-    match_id_param: input.matchId ?? null,
-    sport_id_param: input.sportId ?? null,
-    event_type_param: input.eventType,
-    metadata_param: input.metadata ?? {}
-  });
-
-  if (error) {
-    debugError("[activityService] failed to create activity event", error, {
-      actorProfileId: input.actorProfileId,
-      targetProfileId: input.targetProfileId ?? null,
-      challengeId: input.challengeId ?? null,
-      matchId: input.matchId ?? null,
-      eventType: input.eventType
-    });
-    throw error;
-  }
 }
 
 export function formatActivityFeedItem(event: ActivityEvent, currentProfileId?: string): ActivityFeedItem {

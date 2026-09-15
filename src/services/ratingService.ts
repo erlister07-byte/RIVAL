@@ -1,5 +1,3 @@
-import { supabase } from "./supabaseClient";
-
 const DEFAULT_RATING = 1200;
 const K_FACTOR = 32;
 const MIN_RATING = 800;
@@ -31,16 +29,6 @@ export function getRatingMatchReason(currentRating: number, opponentRating: numb
   }
 
   return "Good skill match";
-}
-
-export async function applyMatchRatingUpdate(matchId: string) {
-  const { error } = await supabase.rpc("apply_match_rating", {
-    match_id: matchId
-  });
-
-  if (error) {
-    throw error;
-  }
 }
 
 export { DEFAULT_RATING, K_FACTOR };

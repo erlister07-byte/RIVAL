@@ -6,7 +6,6 @@ import {
   Challenge,
   ChallengeType,
   Match,
-  PlayStyleTag,
   Profile,
   RecentMatch,
   SkillLevel,
@@ -96,7 +95,6 @@ type AppContextValue = {
   refreshAuthUser: () => Promise<void>;
   completeOnboarding: (input: OnboardingInput) => Promise<void>;
   updateAvailability: (availabilityStatus: AvailabilityStatus) => Promise<void>;
-  updatePlayStyleTags: (playStyleTags: PlayStyleTag[]) => Promise<void>;
   createChallenge: (input: ChallengeInput) => Promise<Challenge>;
   respondToChallenge: (challengeId: string, status: "accepted" | "declined") => Promise<void>;
   submitResult: (input: ResultInput) => Promise<Match>;
@@ -614,31 +612,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function updatePlayStyleTags(playStyleTags: PlayStyleTag[]) {
-    if (!currentUser) {
-      throw new Error("You must be logged in to update play style.");
-    }
-
-    try {
-      const updatedProfile = await updateUserProfile(currentUser.id, { playStyleTags });
-
-      setCurrentUser((previous) =>
-        previous
-          ? {
-              ...previous,
-              playStyleTags: updatedProfile.playStyleTags
-            }
-          : previous
-      );
-    } catch (error) {
-      debugError("[AppProvider] updatePlayStyleTags failed", error, {
-        currentUserProfileId: currentUser.id,
-        playStyleTags
-      });
-      throw toServiceError(error, "Unable to update play style right now.");
-    }
-  }
-
   async function respondToChallenge(challengeId: string, status: "accepted" | "declined") {
     try {
       await sleep(300);
@@ -833,7 +806,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshAuthUser,
       completeOnboarding,
       updateAvailability,
-      updatePlayStyleTags,
       createChallenge,
       respondToChallenge,
       submitResult,
@@ -849,7 +821,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isHydratingProfile,
       matches,
       updateAvailability,
-      updatePlayStyleTags,
       refreshAuthUser,
       requestPasswordReset,
       recentMatches,

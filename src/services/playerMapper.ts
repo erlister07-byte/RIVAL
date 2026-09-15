@@ -1,4 +1,4 @@
-import { AvailabilityStatus, PlayerSummary, normalizePlayStyleTags } from "@/core/types/models";
+import { AvailabilityStatus, PlayerSummary } from "@/core/types/models";
 import { withOptionalFieldFallback } from "@/shared/lib/schemaDrift";
 
 type JoinedProfileStats =
@@ -22,7 +22,6 @@ type PlayerSummaryRow = {
   username: string;
   display_name: string;
   availability_status?: string | null;
-  play_style_tags?: string[] | null;
   profile_stats?: JoinedProfileStats;
 };
 
@@ -42,7 +41,7 @@ export function mapPlayerSummary(row: PlayerSummaryRow): PlayerSummary {
     username: row.username,
     displayName: row.display_name,
     availabilityStatus: withOptionalFieldFallback(row.availability_status as AvailabilityStatus | null, "unavailable"),
-    playStyleTags: normalizePlayStyleTags(row.play_style_tags),
+    playStyleTags: [],
     wins: stats?.wins ?? 0,
     losses: stats?.losses ?? 0,
     draws: stats?.draws ?? 0,

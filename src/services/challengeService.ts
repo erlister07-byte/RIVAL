@@ -1,11 +1,10 @@
 import { Challenge, OpenChallenge } from "@/core/types/models";
 import { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
-import { Database, Json } from "@/types/database";
+import { Database } from "@/types/database";
 import { DEFAULT_LAUNCH_SPORT, getSportConfigById } from "@/config/sports";
 import { debugError, debugLog } from "@/shared/lib/logger";
 import { toServiceError } from "@/shared/lib/serviceError";
 
-import { createActivityEvent } from "./activityService";
 import { getAuthenticatedRequestHeaders } from "./authSession";
 import { supabase } from "./supabaseClient";
 
@@ -221,25 +220,6 @@ function isRelevantChallengeRealtimeEvent(
   }
 
   return row.opponent_profile_id === profileId || row.challenger_profile_id === profileId;
-}
-
-async function getParticipantNames(challengerProfileId: string, opponentProfileId?: string | null) {
-  const participantIds = [challengerProfileId, opponentProfileId].filter(Boolean) as string[];
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, display_name")
-    .in("id", participantIds);
-
-  if (error) {
-    throw error;
-  }
-
-  const namesById = new Map((data ?? []).map((profile) => [profile.id, profile.display_name]));
-
-  return {
-    challengerName: namesById.get(challengerProfileId) ?? "Player",
-    opponentName: (opponentProfileId ? namesById.get(opponentProfileId) : undefined) ?? "Player"
-  };
 }
 
 function mapChallenge(row: ChallengeRowWithSport): Challenge {
@@ -462,41 +442,6 @@ async function updateChallengeStatus(
 
     const challengeRow = data[0] as ChallengeRowWithSport;
 
-    if (status === "accepted") {
-      try {
-        if (!challengeRow.opponent_profile_id) {
-          throw new Error("Accepted challenge is missing an opponent.");
-        }
-
-        const { challengerName, opponentName } = await getParticipantNames(
-          challengeRow.challenger_profile_id,
-          challengeRow.opponent_profile_id
-        );
-
-        const metadata: Json = {
-          actor_display_name: opponentName,
-          opponent_display_name: challengerName,
-          target_display_name: challengerName,
-          sport_name: challengeRow.sports?.name,
-          location: challengeRow.location_name,
-          challenge_location: challengeRow.location_name
-        };
-
-        await createActivityEvent({
-          actorProfileId: challengeRow.opponent_profile_id,
-          targetProfileId: challengeRow.challenger_profile_id,
-          challengeId: challengeRow.id,
-          sportId: challengeRow.sports?.id ?? null,
-          eventType: "challenge_accepted",
-          metadata
-        });
-      } catch (activityError) {
-        debugError("Failed to log challenge accepted activity", activityError, {
-          challengeId: challengeRow.id
-        });
-      }
-    }
-
     return mapChallenge(challengeRow);
   } catch (error) {
     debugError("[challengeService] challenge status update failed", error, {
@@ -564,37 +509,6 @@ export async function createChallenge(input: CreateChallengeInput): Promise<Chal
     }
 
     const challengeRow = responsePayload.challenge;
-
-    if (!input.isOpen && challengeRow.opponent_profile_id) {
-      try {
-        const { challengerName, opponentName } = await getParticipantNames(
-          challengeRow.challenger_profile_id,
-          challengeRow.opponent_profile_id
-        );
-
-        const metadata: Json = {
-          actor_display_name: challengerName,
-          opponent_display_name: opponentName,
-          target_display_name: opponentName,
-          sport_name: challengeRow.sports?.name,
-          location: challengeRow.location_name,
-          challenge_location: challengeRow.location_name
-        };
-
-        await createActivityEvent({
-          actorProfileId: challengeRow.challenger_profile_id,
-          targetProfileId: challengeRow.opponent_profile_id,
-          challengeId: challengeRow.id,
-          sportId: challengeRow.sports?.id ?? input.sportId,
-          eventType: "challenge_created",
-          metadata
-        });
-      } catch (activityError) {
-        debugError("Failed to log challenge created activity", activityError, {
-          challengeId: challengeRow.id
-        });
-      }
-    }
 
     return mapChallenge(challengeRow);
   } catch (error) {

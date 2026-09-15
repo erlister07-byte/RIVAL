@@ -131,62 +131,7 @@ Deno.serve(async (request) => {
         });
       }
 
-      const email = sanitizeString(authUser.email);
-      if (!email || !authUser.email_confirmed_at) {
-        return jsonResponse(200, { success: true, profile: null });
-      }
-
-      const { data: emailProfile, error: emailProfileError } = await supabaseAdmin
-        .from("profiles")
-        .select("id, auth_user_id")
-        .eq("email", email)
-        .maybeSingle();
-
-      if (emailProfileError) {
-        console.error("[upsert-profile] email profile lookup failed", {
-          authUserId,
-          error: emailProfileError
-        });
-        return jsonResponse(
-          emailProfileError.code === "PGRST116" ? 409 : 500,
-          { error: emailProfileError.code === "PGRST116" ? "Multiple profiles match this email." : emailProfileError.message }
-        );
-      }
-
-      if (!emailProfile) {
-        return jsonResponse(200, { success: true, profile: null });
-      }
-
-      if (emailProfile.auth_user_id && emailProfile.auth_user_id !== authUserId) {
-        return jsonResponse(409, { error: "That email is already linked to another account." });
-      }
-
-      const { data: claimedProfile, error: claimError } = await supabaseAdmin
-        .from("profiles")
-        .update({ auth_user_id: authUserId })
-        .eq("id", emailProfile.id)
-        .eq("email", email)
-        .is("auth_user_id", null)
-        .select(getProfileSelect())
-        .maybeSingle();
-
-      if (claimError) {
-        console.error("[upsert-profile] profile claim failed", {
-          authUserId,
-          profileId: emailProfile.id,
-          error: claimError
-        });
-        return jsonResponse(409, { error: "Unable to claim the existing profile." });
-      }
-
-      if (!claimedProfile) {
-        return jsonResponse(409, { error: "Unable to claim the existing profile." });
-      }
-
-      return jsonResponse(200, {
-        success: true,
-        profile: claimedProfile
-      });
+      return jsonResponse(200, { success: true, profile: null });
     }
 
     const requestBody = (await request.json().catch(() => ({}))) as UpsertProfileRequest;

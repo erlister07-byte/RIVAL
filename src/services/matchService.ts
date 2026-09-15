@@ -456,7 +456,7 @@ export async function submitMatchResult(input: SubmitMatchResultInput): Promise<
 export async function autoConfirmOverdueMatchResults(profileId?: string): Promise<Match[]> {
   try {
     const { data, error } = await supabase.rpc("auto_confirm_overdue_match_results", {
-      p_profile_id: profileId ?? null
+      p_profile_id: profileId
     });
 
     if (error) {
