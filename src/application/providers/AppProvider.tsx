@@ -69,6 +69,13 @@ type ResultInput = {
   resultNotes?: string;
 };
 
+type ConfirmResultProgression = Pick<Profile, "wins" | "losses" | "draws" | "matchesPlayed" | "xp">;
+
+type ConfirmResultResponse = {
+  match: Match;
+  progression: ConfirmResultProgression | null;
+};
+
 export type SessionStatus =
   | "booting"
   | "signed_out"
@@ -98,7 +105,7 @@ type AppContextValue = {
   createChallenge: (input: ChallengeInput) => Promise<Challenge>;
   respondToChallenge: (challengeId: string, status: "accepted" | "declined") => Promise<void>;
   submitResult: (input: ResultInput) => Promise<Match>;
-  confirmResult: (matchId: string) => Promise<Match>;
+  confirmResult: (matchId: string) => Promise<ConfirmResultResponse>;
   rejectResult: (matchId: string) => Promise<Match>;
 };
 
@@ -702,22 +709,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
       matchId
     });
 
+    let confirmedMatch: Match;
+
     try {
-      const confirmedMatch = await confirmMatchResult(matchId, currentUser.id);
-
-      setMatches((previous) => {
-        const next = previous.map((item) => (item.id === confirmedMatch.id ? confirmedMatch : item));
-        return next.some((item) => item.id === confirmedMatch.id) ? next : [confirmedMatch, ...next];
+      confirmedMatch = await confirmMatchResult(matchId, currentUser.id);
+    } catch (error) {
+      debugError("[AppProvider] confirmResult failed", error, {
+        currentUserProfileId: currentUser.id,
+        matchId
       });
+      throw toServiceError(error, "Unable to confirm result.");
+    }
 
-      setChallenges((previous) =>
-        previous.map((item) =>
-          item.id === confirmedMatch.challengeId ? { ...item, status: "completed" } : item
-        )
-      );
-      setChallengeReloadKey((value) => value + 1);
-      setMatchReloadKey((value) => value + 1);
+    setMatches((previous) => {
+      const next = previous.map((item) => (item.id === confirmedMatch.id ? confirmedMatch : item));
+      return next.some((item) => item.id === confirmedMatch.id) ? next : [confirmedMatch, ...next];
+    });
 
+    setChallenges((previous) =>
+      previous.map((item) =>
+        item.id === confirmedMatch.challengeId ? { ...item, status: "completed" } : item
+      )
+    );
+    setChallengeReloadKey((value) => value + 1);
+    setMatchReloadKey((value) => value + 1);
+
+    let progression: ConfirmResultProgression | null = null;
+
+    try {
       debugLog("[AppProvider] reloading stats after confirm", {
         currentUserProfileId: currentUser.id,
         matchId,
@@ -733,8 +752,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         matchesPlayed: stats.matchesPlayed,
         xp: stats.xp
       });
+      progression = stats;
       setCurrentUser((previous) =>
-        previous
+        previous?.id === currentUser.id
           ? {
               ...previous,
               wins: stats.wins,
@@ -745,21 +765,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
           : previous
       );
+    } catch (error) {
+      debugError("[AppProvider] stats reload after confirm failed", error, {
+        currentUserProfileId: currentUser.id,
+        matchId
+      });
+    }
+
+    try {
       const nextRecentMatches = await getRecentMatches(currentUser.id);
       debugLog("[AppProvider] recent matches reload after confirm", {
         currentUserProfileId: currentUser.id,
         recentMatchCount: nextRecentMatches.length
       });
       setRecentMatches(nextRecentMatches);
-
-      return confirmedMatch;
     } catch (error) {
-      debugError("[AppProvider] confirmResult failed", error, {
+      debugError("[AppProvider] recent matches reload after confirm failed", error, {
         currentUserProfileId: currentUser.id,
         matchId
       });
-      throw toServiceError(error, "Unable to confirm result.");
     }
+
+    return { match: confirmedMatch, progression };
   }
 
   async function rejectResult(matchId: string) {

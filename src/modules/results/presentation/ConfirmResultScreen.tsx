@@ -6,7 +6,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { AppStackParamList } from "@/application/navigation/types";
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
-import { getStakeOutcomeCopy } from "@/core/types/models";
+import { getStakeOutcomeCopy, Profile } from "@/core/types/models";
 import {
   MatchForSubmission,
   formatResultConfirmationDeadline,
@@ -20,6 +20,7 @@ import { ResolvedStateCard } from "@/shared/components/ResolvedStateCard";
 import { StatPill } from "@/shared/components/StatPill";
 import { SuccessBanner } from "@/shared/components/SuccessBanner";
 import { openBetaFeedbackEmail } from "@/shared/lib/betaFeedback";
+import { getLevelProgress } from "@/shared/lib/levels";
 import { debugError, debugLog } from "@/shared/lib/logger";
 import { getUserSafeErrorMessage } from "@/shared/lib/serviceError";
 import { useTimedSuccess } from "@/shared/lib/useTimedSuccess";
@@ -35,6 +36,9 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
   const [actionLoading, setActionLoading] = useState<"confirm" | "reject" | null>(null);
   const [error, setError] = useState("");
   const [resolvedState, setResolvedState] = useState<"confirmed" | "rejected" | null>(null);
+  const [confirmedProgression, setConfirmedProgression] = useState<
+    Pick<Profile, "wins" | "losses" | "draws" | "matchesPlayed" | "xp"> | null
+  >(null);
   const [reloadKey, setReloadKey] = useState(0);
   const { success, showSuccess, clearSuccess } = useTimedSuccess();
 
@@ -88,6 +92,7 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
     if (!isFocused) {
       clearSuccess();
       setResolvedState(null);
+      setConfirmedProgression(null);
     }
   }, [clearSuccess, isFocused]);
 
@@ -145,7 +150,7 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
     );
   }
 
-  if (match.resultStatus !== "pending_confirmation") {
+  if (match.resultStatus !== "pending_confirmation" && resolvedState === null) {
     return (
       <Screen>
         <Card>
@@ -205,6 +210,22 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
     stakeType: resolvedMatch.stakeType,
     stakeLabel: resolvedMatch.stakeLabel
   });
+  const earnedXp = confirmedResultDirection === "win"
+    ? 200
+    : confirmedResultDirection === "loss"
+      ? 100
+      : 150;
+  const confirmedLevelProgress = confirmedProgression ? getLevelProgress(confirmedProgression.xp) : null;
+  const confirmedResultTitle = confirmedResultDirection === "win"
+    ? "Victory"
+    : confirmedResultDirection === "draw"
+      ? "Draw"
+      : "Match complete";
+  const confirmedResultCopy = confirmedResultDirection === "win"
+    ? `You won against ${nextOpponentName}.`
+    : confirmedResultDirection === "draw"
+      ? `You drew with ${nextOpponentName}.`
+      : `You lost to ${nextOpponentName}.`;
 
   async function handleConfirm() {
     setActionLoading("confirm");
@@ -212,7 +233,8 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
     clearSuccess();
 
     try {
-      await confirmResult(resolvedMatch.id);
+      const confirmation = await confirmResult(resolvedMatch.id);
+      setConfirmedProgression(confirmation.progression);
       showSuccess(
         confirmedResultDirection === "draw"
           ? "Draw confirmed"
@@ -248,25 +270,70 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
       <Screen>
         {success ? <SuccessBanner title={success.title} hint={success.hint} onDismiss={clearSuccess} /> : null}
         <ResolvedStateCard
-          title="Result confirmed"
-          description={`${confirmedStakeOutcome} Your updated stats are ready below.`}
+          title={confirmedResultTitle}
+          description={`Result confirmed. ${confirmedResultCopy} ${confirmedStakeOutcome}`}
         />
         <Card>
-          <Text style={styles.sectionTitle}>Match Recorded</Text>
-          <Text style={styles.helperText}>
-            {currentUser
-              ? `You're now ${currentUser.wins}–${currentUser.losses}–${currentUser.draws}.`
-              : "Your match has been confirmed."}
-          </Text>
-          <View style={styles.statsRow}>
-            <StatPill label="Wins" value={currentUser?.wins ?? 0} />
-            <StatPill label="Losses" value={currentUser?.losses ?? 0} />
-            <StatPill label="Draws" value={currentUser?.draws ?? 0} />
-            <StatPill label="Played" value={currentUser?.matchesPlayed ?? 0} />
-          </View>
-          <Text style={styles.successSummary}>
-            Confirmed result vs {nextOpponentName}. {confirmedStakeOutcome}
-          </Text>
+          <Text style={styles.rewardLabel}>Match Reward</Text>
+          <Text style={styles.rewardValue}>+{earnedXp} XP earned</Text>
+          <Text style={styles.helperText}>Reward from this confirmed match.</Text>
+        </Card>
+        <Card>
+          <Text style={styles.sectionTitle}>Updated Progression</Text>
+          {confirmedProgression && confirmedLevelProgress ? (
+            <>
+              <View style={styles.progressionSummary}>
+                <View style={styles.progressionMetric}>
+                  <Text style={styles.progressionLabel}>RIVAL Level</Text>
+                  <Text style={styles.progressionValue}>{confirmedLevelProgress.level}</Text>
+                </View>
+                <View style={styles.progressionMetric}>
+                  <Text style={styles.progressionLabel}>Lifetime XP</Text>
+                  <Text style={styles.progressionValue}>{confirmedLevelProgress.xp.toLocaleString()} XP</Text>
+                </View>
+              </View>
+              <View style={styles.levelProgressCopy}>
+                <Text style={styles.levelProgressLabel}>
+                  Progress toward Level {confirmedLevelProgress.level + 1}
+                </Text>
+                <Text style={styles.levelProgressValue}>
+                  {confirmedLevelProgress.xpIntoLevel.toLocaleString()} / {confirmedLevelProgress.xpRequiredForNextLevel.toLocaleString()} XP
+                </Text>
+              </View>
+              <View
+                accessibilityRole="progressbar"
+                accessibilityLabel={`Progress toward RIVAL Level ${confirmedLevelProgress.level + 1}`}
+                accessibilityValue={{
+                  min: 0,
+                  max: confirmedLevelProgress.xpRequiredForNextLevel,
+                  now: confirmedLevelProgress.xpIntoLevel,
+                  text: `${confirmedLevelProgress.xpIntoLevel} of ${confirmedLevelProgress.xpRequiredForNextLevel} XP`
+                }}
+                style={styles.levelProgressTrack}
+              >
+                <View
+                  style={[
+                    styles.levelProgressFill,
+                    { width: `${confirmedLevelProgress.progressRatio * 100}%` }
+                  ]}
+                />
+              </View>
+              <Text style={styles.recordLabel}>Updated Record</Text>
+              <View style={styles.statsRow}>
+                <StatPill label="Wins" value={confirmedProgression.wins} />
+                <StatPill label="Losses" value={confirmedProgression.losses} />
+                <StatPill label="Draws" value={confirmedProgression.draws} />
+                <StatPill label="Played" value={confirmedProgression.matchesPlayed} />
+              </View>
+            </>
+          ) : (
+            <View style={styles.progressionUnavailable}>
+              <Text style={styles.progressionUnavailableTitle}>Progress update unavailable</Text>
+              <Text style={styles.helperText}>
+                Your result is confirmed. Open Profile or Home to refresh your latest record, Lifetime XP, and RIVAL Level.
+              </Text>
+            </View>
+          )}
         </Card>
         <Button
           label="Challenge Again"
@@ -445,6 +512,82 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: "row",
     gap: spacing.sm
+  },
+  rewardLabel: {
+    color: colors.textMuted,
+    fontWeight: "700",
+    fontSize: typography.caption,
+    textTransform: "uppercase",
+    letterSpacing: 0.8
+  },
+  rewardValue: {
+    color: colors.primary,
+    fontWeight: "800",
+    fontSize: typography.title
+  },
+  progressionSummary: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted
+  },
+  progressionMetric: {
+    flex: 1,
+    gap: spacing.xxs
+  },
+  progressionLabel: {
+    color: colors.textMuted,
+    fontWeight: "700",
+    fontSize: typography.caption
+  },
+  progressionValue: {
+    color: colors.text,
+    fontWeight: "800",
+    fontSize: typography.heading
+  },
+  levelProgressCopy: {
+    gap: spacing.xxs
+  },
+  levelProgressLabel: {
+    color: colors.textMuted,
+    fontWeight: "700",
+    fontSize: typography.caption
+  },
+  levelProgressValue: {
+    color: colors.text,
+    fontWeight: "700",
+    fontSize: typography.bodyStrong
+  },
+  levelProgressTrack: {
+    width: "100%",
+    height: 10,
+    overflow: "hidden",
+    borderRadius: 999,
+    backgroundColor: colors.border
+  },
+  levelProgressFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: colors.primary
+  },
+  recordLabel: {
+    color: colors.textMuted,
+    fontWeight: "700",
+    fontSize: typography.caption,
+    textTransform: "uppercase",
+    letterSpacing: 0.8
+  },
+  progressionUnavailable: {
+    gap: spacing.xs,
+    padding: spacing.md,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted
+  },
+  progressionUnavailableTitle: {
+    color: colors.text,
+    fontWeight: "700",
+    fontSize: typography.bodyStrong
   },
   stateContainer: {
     flex: 1,
