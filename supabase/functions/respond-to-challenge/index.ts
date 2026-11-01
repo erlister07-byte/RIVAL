@@ -1,4 +1,5 @@
 import { getAuthenticatedUserId } from "../_shared/auth.ts";
+import { isPairBlocked } from "../_shared/block.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -83,18 +84,28 @@ Deno.serve(async (request) => {
     const requiredProfileId = action === "cancel" ? existing.challenger_profile_id : existing.opponent_profile_id;
     if (requiredProfileId !== caller.id) return jsonResponse(403, { error: "You are not allowed to perform this challenge action" });
     if (existing.status !== "pending") return jsonResponse(409, { error: "This challenge is no longer pending" });
+    if (action === "accept" && await isPairBlocked(supabaseAdmin, existing.challenger_profile_id, existing.opponent_profile_id)) {
+      return jsonResponse(409, { error: "This challenge is no longer pending" });
+    }
 
     const status = action === "accept" ? "accepted" : action === "decline" ? "declined" : "canceled";
     const timestampColumn = action === "accept" ? "accepted_at" : action === "decline" ? "declined_at" : "canceled_at";
     const roleColumn = action === "cancel" ? "challenger_profile_id" : "opponent_profile_id";
     const update = { status, [timestampColumn]: new Date().toISOString() };
-    const { data: rows, error: updateError } = await supabaseAdmin
-      .from("challenges")
-      .update(update)
-      .eq("id", challengeId)
-      .eq(roleColumn, caller.id)
-      .eq("status", "pending")
-      .select("id, challenger_profile_id, opponent_profile_id, scheduled_at, location_name, challenge_type, stake_type, stake_label, stake_note, status, created_at, sports!inner(slug), challenger:profiles!challenges_challenger_profile_id_fkey(username, display_name), opponent:profiles!challenges_opponent_profile_id_fkey(username, display_name)");
+    const selection = "id, challenger_profile_id, opponent_profile_id, scheduled_at, location_name, challenge_type, stake_type, stake_label, stake_note, status, created_at, sports!inner(slug), challenger:profiles!challenges_challenger_profile_id_fkey(username, display_name), opponent:profiles!challenges_opponent_profile_id_fkey(username, display_name)";
+    const { data: rows, error: updateError } = action === "accept"
+      ? await supabaseAdmin.rpc("social_accept_challenge", {
+        trusted_actor_auth_user_id: authUserId,
+        target_challenge_id: challengeId,
+        join_open: false
+      }).select(selection)
+      : await supabaseAdmin.from("challenges")
+        .update(update)
+        .eq("id", challengeId)
+        .eq(roleColumn, caller.id)
+        .eq("status", "pending")
+        .select(selection);
+    if (updateError?.code === "P0001") return jsonResponse(409, { error: "This challenge is no longer pending" });
     if (updateError) return jsonResponse(500, { error: "Unable to update challenge" });
     if (!rows?.length) return jsonResponse(409, { error: "This challenge was updated by another action" });
 

@@ -10,6 +10,15 @@ verify_jwt = true
 [functions.search-profiles]
 verify_jwt = true
 
+[functions.get-opponent-profile]
+verify_jwt = true
+
+[functions.get-social-relationships]
+verify_jwt = true
+
+[functions.manage-social]
+verify_jwt = true
+
 [functions.create-challenge]
 verify_jwt = true
 

@@ -1,7 +1,8 @@
 import { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { ChevronLeft } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, radius, spacing, typography } from "@/application/theme";
 
@@ -15,12 +16,22 @@ type Props = {
 const SIDE_ZONE_WIDTH = 168;
 
 export function Header({ title, onBackPress, rightSlot, showBackButton = false }: Props) {
+  const insets = useSafeAreaInsets();
+  const isNative = Platform.OS !== "web";
+
   return (
     <LinearGradient
       colors={[colors.primaryStart, colors.primaryEnd]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={styles.container}
+      style={[
+        styles.container,
+        isNative && {
+          minHeight: Math.max(104, insets.top + 72),
+          paddingTop: insets.top + 28,
+          paddingBottom: spacing.xs
+        }
+      ]}
     >
       <View style={styles.leading}>
         {showBackButton && onBackPress ? (
@@ -32,7 +43,15 @@ export function Header({ title, onBackPress, rightSlot, showBackButton = false }
           RIVAL
         </Text>
       </View>
-      <View pointerEvents="none" style={styles.titleWrap}>
+      {/* Native titles need their own full-width space above the unchanged brand/action row. */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.titleWrap,
+          isNative && styles.nativeTitleWrap,
+          isNative && { top: insets.top + spacing.xxs }
+        ]}
+      >
         <Text numberOfLines={1} style={styles.title}>
           {title}
         </Text>
@@ -69,6 +88,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
     alignItems: "center",
     justifyContent: "center"
+  },
+  nativeTitleWrap: {
+    bottom: undefined,
+    height: 24,
+    left: spacing.md,
+    right: spacing.md
   },
   trailing: {
     width: SIDE_ZONE_WIDTH,

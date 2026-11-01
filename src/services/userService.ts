@@ -1,4 +1,4 @@
-import { AvailabilityStatus, PlayStyleTag, PlayerSummary, Profile, SkillLevel } from "@/core/types/models";
+import { AvailabilityStatus, PlayStyleTag, Profile, SkillLevel } from "@/core/types/models";
 import { Database } from "@/types/database";
 import { isMissingColumnError, withOptionalFieldFallback } from "@/shared/lib/schemaDrift";
 import { debugLog } from "@/shared/lib/logger";
@@ -352,24 +352,6 @@ export async function getUserProfile({
   return mapProfile(data);
 }
 
-export async function getPlayerById(profileId: string): Promise<PlayerSummary | null> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, username, display_name, profile_stats(profile_id, wins, losses, draws, matches_played)")
-    .eq("id", profileId)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data) {
-    return null;
-  }
-
-  return mapPlayerSummary(data);
-}
-
 export async function updateUserProfile(
   profileId: string,
   input: UpdateUserProfileInput
@@ -454,7 +436,7 @@ export async function searchProfilesByUsername(
   const normalizedQuery = query.trim();
 
   if (normalizedQuery.length < 2) {
-    debugLog("[userService] skipping friend search below minimum query length", {
+    debugLog("[userService] skipping player search below minimum query length", {
       currentProfileId,
       query: normalizedQuery
     });
@@ -509,7 +491,7 @@ export async function searchProfilesByUsername(
     };
   });
 
-  debugLog("[userService] friend search completed", {
+  debugLog("[userService] player search completed", {
     currentProfileId,
     query: normalizedQuery,
     rawResults: rows.length,

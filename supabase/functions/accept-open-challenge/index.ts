@@ -1,4 +1,5 @@
 import { getAuthenticatedUserId } from "../_shared/auth.ts";
+import { isPairBlocked } from "../_shared/block.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
@@ -19,7 +20,15 @@ Deno.serve(async (request) => {
     if (callerError) return jsonResponse(500, { error: "Unable to resolve current profile" });
     if (!caller) return jsonResponse(404, { error: "Profile not found for authenticated user" });
     if (!caller.onboarding_completed) return jsonResponse(422, { error: "Complete onboarding before joining an open challenge" });
-    const { data: rows, error: updateError } = await supabaseAdmin.from("challenges").update({ opponent_profile_id: caller.id, status: "accepted", is_open: false, accepted_at: new Date().toISOString() }).eq("id", body.challengeId).eq("is_open", true).eq("status", "pending").is("opponent_profile_id", null).neq("challenger_profile_id", caller.id).select("id");
+    const { data: target, error: targetError } = await supabaseAdmin.from("challenges").select("challenger_profile_id").eq("id", body.challengeId).eq("is_open", true).eq("status", "pending").maybeSingle();
+    if (targetError) return jsonResponse(500, { error: "Unable to accept open challenge" });
+    if (!target || await isPairBlocked(supabaseAdmin, caller.id, target.challenger_profile_id)) return jsonResponse(409, { error: "This open challenge is no longer available" });
+    const { data: rows, error: updateError } = await supabaseAdmin.rpc("social_accept_challenge", {
+      trusted_actor_auth_user_id: authUserId,
+      target_challenge_id: body.challengeId,
+      join_open: true
+    }).select("id");
+    if (updateError?.code === "P0001") return jsonResponse(409, { error: "This open challenge is no longer available" });
     if (updateError) return jsonResponse(500, { error: "Unable to accept open challenge" });
     if (!rows?.length) return jsonResponse(409, { error: "This open challenge is no longer available" });
     const { data: match, error: matchError } = await supabaseAdmin.from("matches").select("id, result_status").eq("challenge_id", body.challengeId).maybeSingle();

@@ -197,6 +197,64 @@ export type Database = {
           },
         ]
       }
+      friend_relationships: {
+        Row: {
+          accepted_at: string | null
+          ended_at: string | null
+          profile_a_id: string
+          profile_b_id: string
+          requested_at: string
+          requested_by_profile_id: string
+          responded_at: string | null
+          status: Database["public"]["Enums"]["friend_relationship_status"]
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          ended_at?: string | null
+          profile_a_id: string
+          profile_b_id: string
+          requested_at?: string
+          requested_by_profile_id: string
+          responded_at?: string | null
+          status?: Database["public"]["Enums"]["friend_relationship_status"]
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          ended_at?: string | null
+          profile_a_id?: string
+          profile_b_id?: string
+          requested_at?: string
+          requested_by_profile_id?: string
+          responded_at?: string | null
+          status?: Database["public"]["Enums"]["friend_relationship_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "friend_relationships_profile_a_id_fkey"
+            columns: ["profile_a_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "friend_relationships_profile_b_id_fkey"
+            columns: ["profile_b_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "friend_relationships_requested_by_profile_id_fkey"
+            columns: ["requested_by_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       live_sessions: {
         Row: {
           created_at: string
@@ -488,6 +546,39 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      profile_blocks: {
+        Row: {
+          blocked_profile_id: string
+          blocker_profile_id: string
+          created_at: string
+        }
+        Insert: {
+          blocked_profile_id: string
+          blocker_profile_id: string
+          created_at?: string
+        }
+        Update: {
+          blocked_profile_id?: string
+          blocker_profile_id?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_blocks_blocked_profile_id_fkey"
+            columns: ["blocked_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_blocks_blocker_profile_id_fkey"
+            columns: ["blocker_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profile_sport_ratings: {
         Row: {
@@ -853,6 +944,67 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      social_block_profile: {
+        Args: {
+          target_profile_id: string
+          trusted_actor_auth_user_id: string
+        }
+        Returns: boolean
+      }
+      social_accept_challenge: {
+        Args: {
+          join_open: boolean
+          target_challenge_id: string
+          trusted_actor_auth_user_id: string
+        }
+        Returns: Database["public"]["Tables"]["challenges"]["Row"][]
+        SetofOptions: {
+          from: "*"
+          to: "challenges"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      social_cancel_friend_request: {
+        Args: {
+          target_profile_id: string
+          trusted_actor_auth_user_id: string
+        }
+        Returns: string
+      }
+      social_pair_is_blocked: {
+        Args: { first_profile_id: string; second_profile_id: string }
+        Returns: boolean
+      }
+      social_remove_friendship: {
+        Args: {
+          other_profile_id: string
+          trusted_actor_auth_user_id: string
+        }
+        Returns: string
+      }
+      social_respond_to_friend_request: {
+        Args: {
+          requester_profile_id: string
+          response_action: string
+          trusted_actor_auth_user_id: string
+        }
+        Returns: string
+      }
+      social_send_friend_request: {
+        Args: {
+          target_profile_id: string
+          trusted_actor_auth_user_id: string
+        }
+        Returns: string
+      }
+      social_unblock_profile: {
+        Args: {
+          target_profile_id: string
+          trusted_actor_auth_user_id: string
+        }
+        Returns: boolean
+      }
       submit_match_result_v2: {
         Args: {
           result_notes_param?: string
@@ -905,6 +1057,11 @@ export type Database = {
         | "completed"
         | "canceled"
       challenge_type: "casual" | "practice" | "ranked"
+      friend_relationship_status:
+        | "pending"
+        | "accepted"
+        | "declined"
+        | "removed"
       match_result_outcome: "win" | "draw"
       match_result_status:
         | "pending_submission"
@@ -1057,6 +1214,12 @@ export const Constants = {
         "canceled",
       ],
       challenge_type: ["casual", "practice", "ranked"],
+      friend_relationship_status: [
+        "pending",
+        "accepted",
+        "declined",
+        "removed",
+      ],
       match_result_outcome: ["win", "draw"],
       match_result_status: [
         "pending_submission",

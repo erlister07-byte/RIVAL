@@ -85,6 +85,7 @@ export function FriendSearchScreen({ navigation }: Props) {
         availabilityStatus={item.availabilityStatus}
         playStyleTags={item.playStyleTags}
         matchesPlayed={item.matchesPlayed}
+        onViewProfile={() => navigation.navigate("OpponentProfile", { opponentProfileId: item.id })}
         onPress={() =>
           navigation.navigate({
             name: "CreateChallenge",
@@ -118,7 +119,7 @@ export function FriendSearchScreen({ navigation }: Props) {
           </View>
         ) : !hasSearched ? (
           <EmptyState
-            title="Challenge a friend by username"
+            title="Find a player by username"
             description="Type at least 2 characters to find a player and send a pickleball challenge fast."
           />
         ) : hasSearched && results.length === 0 && !error ? (

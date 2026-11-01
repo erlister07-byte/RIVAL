@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { AppStackParamList } from "@/application/navigation/types";
+import { buildRematchChallengeParams } from "@/application/navigation/challengeNavigation";
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
 import { getStakeOutcomeCopy, Profile } from "@/core/types/models";
@@ -200,6 +201,10 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
     resolvedCurrentUser.id === resolvedMatch.challengerProfileId
       ? resolvedMatch.opponentName
       : resolvedMatch.challengerName;
+  const nextOpponentUsername =
+    resolvedCurrentUser.id === resolvedMatch.challengerProfileId
+      ? resolvedMatch.opponentUsername
+      : resolvedMatch.challengerUsername;
   const confirmedResultDirection = isDraw
     ? "draw"
     : resolvedMatch.winnerProfileId === resolvedCurrentUser.id
@@ -338,12 +343,12 @@ export function ConfirmResultScreen({ navigation, route }: Props) {
         <Button
           label="Challenge Again"
           onPress={() =>
-            navigation.replace("CreateChallenge", {
-              opponentId: nextOpponentId,
+            navigation.replace("CreateChallenge", buildRematchChallengeParams({
+              opponentProfileId: nextOpponentId,
               opponentName: nextOpponentName,
-              sport: resolvedMatch.sport,
-              isRematch: true
-            })
+              opponentUsername: nextOpponentUsername,
+              sport: resolvedMatch.sport
+            }))
           }
         />
         <Button

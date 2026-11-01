@@ -20,6 +20,7 @@ import {
   markChallengeInboxViewed
 } from "@/services/challengeInboxActivityStore";
 import { Button } from "@/shared/components/Button";
+import { FriendRequestsPanel } from "@/modules/challenges/presentation/FriendRequestsPanel";
 import { Card } from "@/shared/components/Card";
 import { Chip } from "@/shared/components/Chip";
 import { EmptyState } from "@/shared/components/EmptyState";
@@ -404,6 +405,11 @@ export function ChallengeInboxScreen({ navigation }: Props) {
 
   return (
     <Screen>
+      <FriendRequestsPanel
+        isFocused={isFocused}
+        userId={currentUser?.id}
+        onViewProfile={(opponentProfileId) => navigation.navigate("OpponentProfile", { opponentProfileId })}
+      />
       {success ? <SuccessBanner title={success.title} hint={success.hint} onDismiss={clearSuccess} /> : null}
       {!isCompletelyEmpty && newActivitySummary && newActivitySummary.totalCount > 0 ? (
         <Card style={styles.activityBanner}>
@@ -475,7 +481,7 @@ export function ChallengeInboxScreen({ navigation }: Props) {
             description={
               activeTab === "received"
                 ? "Find a nearby player and start your first match, or check back when someone challenges you."
-                : "Find a nearby player or challenge a friend by username to start your next match."
+                : "Find a nearby player or search by username to start your next match."
             }
           />
           <Button label="Challenge a Player" onPress={() => navigation.navigate("CreateChallenge")} />

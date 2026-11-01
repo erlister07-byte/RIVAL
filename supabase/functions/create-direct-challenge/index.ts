@@ -1,4 +1,5 @@
 import { getAuthenticatedUserId } from "../_shared/auth.ts";
+import { isPairBlocked } from "../_shared/block.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -63,6 +64,7 @@ Deno.serve(async (request) => {
     if (!callerSport) return jsonResponse(422, { error: "Current profile is not ready for Pickleball challenges" });
     if (opponentError) return jsonResponse(500, { error: "Unable to validate opponent" });
     if (!opponent || !opponent.onboarding_completed) return jsonResponse(404, { error: "Opponent is not available" });
+    if (await isPairBlocked(supabaseAdmin, caller.id, opponent.id)) return jsonResponse(404, { error: "Opponent is not available" });
     const { data: opponentSport } = await supabaseAdmin.from("profile_sports").select("profile_id").eq("profile_id", opponent.id).eq("sport_id", 3).eq("is_active", true).maybeSingle();
     if (!opponentSport) return jsonResponse(422, { error: "Opponent is not available for Pickleball challenges" });
 
@@ -71,6 +73,7 @@ Deno.serve(async (request) => {
       .insert({ sport_id: 3, challenger_profile_id: caller.id, opponent_profile_id: opponent.id, scheduled_at: scheduledAt.toISOString(), location_name: locationName, challenge_type: challengeType, stake_type: stakeType, stake_label: stakeLabel, stake_note: stakeNote, is_open: false, status: "pending" })
       .select("id, scheduled_at, location_name, challenge_type, stake_type, stake_label, stake_note, status, created_at")
       .single();
+    if (insertError?.code === "P0001") return jsonResponse(404, { error: "Opponent is not available" });
     if (insertError || !challenge) return jsonResponse(500, { error: "Unable to create challenge" });
 
     return jsonResponse(201, { challenge: { id: challenge.id, direction: "outgoing", opponent: { username: opponent.username ?? opponent.display_name, displayName: opponent.display_name }, sport: "pickleball", challengeType: challenge.challenge_type, status: challenge.status, createdAt: challenge.created_at, scheduledAt: challenge.scheduled_at, locationName: challenge.location_name, stakeType: challenge.stake_type, stakeLabel: challenge.stake_label, stakeNote: challenge.stake_note } });

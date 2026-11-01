@@ -6,9 +6,10 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { AppStackParamList, MainTabParamList } from "@/application/navigation/types";
+import { buildRematchChallengeParams } from "@/application/navigation/challengeNavigation";
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
-import { DEFAULT_LAUNCH_SPORT, getSportIdBySlug } from "@/config/sports";
+import { DEFAULT_LAUNCH_SPORT } from "@/config/sports";
 import { getStakeOutcomeCopy, RecentMatch } from "@/core/types/models";
 import { isActionableResultMatch, subscribeToMatchActivity } from "@/services/matchService";
 import { SuggestedOpponent, getSuggestedOpponents } from "@/services/playerService";
@@ -207,10 +208,10 @@ export function HomeScreen({ navigation }: Props) {
       <Card>
         <Text style={styles.kicker}>Start A Rivalry</Text>
         <Text style={styles.cardTitle}>Start a Rivalry</Text>
-        <Text style={styles.cardText}>Challenge a friend or open it up.</Text>
+        <Text style={styles.cardText}>Find a player or open it up.</Text>
 
         <View style={styles.createActions}>
-          <Button label="Challenge a Friend" onPress={() => navigation.navigate("FriendSearch")} />
+          <Button label="Find Player" onPress={() => navigation.navigate("FriendSearch")} />
           <Button
             label="Post Open Challenge"
             tone="secondary"
@@ -289,14 +290,18 @@ export function HomeScreen({ navigation }: Props) {
                 sportLabel={match.sport}
                 reason={`${getRematchResultCopy(match)} · ${match.scoreSummary}`}
                 actionLabel="Rematch"
+                onViewProfile={() => navigation.navigate("OpponentProfile", {
+                  opponentProfileId: match.opponentProfileId,
+                  confirmedMatchSport: match.sport
+                })}
                 onPress={() =>
-                  navigation.navigate("CreateChallenge", {
-                    opponentId: match.opponentProfileId,
+                  navigation.navigate("CreateChallenge", buildRematchChallengeParams({
+                    opponentProfileId: match.opponentProfileId,
                     opponentName: match.opponentName,
-                    sportId: getSportIdBySlug(match.sport),
-                    isRematch: true,
+                    opponentUsername: match.opponentUsername,
+                    sport: match.sport,
                     timingContext: defaultPlayTiming
-                  })
+                  }))
                 }
               />
             ))}

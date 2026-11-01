@@ -9,6 +9,8 @@ import { MainTabParamList } from "@/application/navigation/types";
 import { useAppState } from "@/application/providers/AppProvider";
 import { getChallengeInboxActivitySummary, subscribeToChallengeActivity } from "@/services/challengeService";
 import { getChallengeInboxLastViewedAt } from "@/services/challengeInboxActivityStore";
+import { getFriendRequests } from "@/services/socialService";
+import { subscribeToSocialUiChanges } from "@/modules/profile/presentation/socialUiRefresh";
 import { debugError } from "@/shared/lib/logger";
 
 type TabDefinition = {
@@ -46,6 +48,7 @@ export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
   const { currentUser } = useAppState();
   const currentRouteName = state.routes[state.index]?.name as keyof MainTabParamList;
   const [newChallengeActivityCount, setNewChallengeActivityCount] = useState(0);
+  const [incomingFriendRequestCount, setIncomingFriendRequestCount] = useState(0);
 
   useEffect(() => {
     let isActive = true;
@@ -54,6 +57,7 @@ export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
       if (!currentUser?.id) {
         if (isActive) {
           setNewChallengeActivityCount(0);
+          setIncomingFriendRequestCount(0);
         }
         return;
       }
@@ -76,28 +80,51 @@ export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
       }
     }
 
-    void loadChallengeActivityCount();
+    async function loadFriendRequestCount() {
+      if (!currentUser?.id) {
+        if (isActive) setIncomingFriendRequestCount(0);
+        return;
+      }
+      try {
+        const requests = await getFriendRequests();
+        if (isActive) setIncomingFriendRequestCount(requests.incoming.length);
+      } catch (error) {
+        debugError("[BottomTabBar] failed to load friend request count", error);
+        if (isActive) setIncomingFriendRequestCount(0);
+      }
+    }
+
+    function refreshCounts() {
+      void loadChallengeActivityCount();
+      void loadFriendRequestCount();
+    }
+
+    refreshCounts();
 
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
-        void loadChallengeActivityCount();
+        refreshCounts();
       }
     });
+    const unsubscribeSocial = subscribeToSocialUiChanges(refreshCounts);
 
     const realtimeChannel = currentUser?.id
       ? subscribeToChallengeActivity(currentUser.id, () => {
-          void loadChallengeActivityCount();
+          refreshCounts();
         })
       : null;
 
     return () => {
       isActive = false;
       subscription.remove();
+      unsubscribeSocial();
       if (realtimeChannel) {
         void realtimeChannel.unsubscribe();
       }
     };
   }, [currentRouteName, currentUser?.id]);
+
+  const inboxAttentionCount = newChallengeActivityCount + incomingFriendRequestCount;
 
   return (
     <View style={styles.outer}>
@@ -109,9 +136,9 @@ export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
             <>
               <View style={styles.iconWrap}>
                 <TabIcon icon={tab.icon} color={active || tab.key === "Create" ? colors.white : colors.gray400} />
-                {tab.key === "Challenges" && currentRouteName !== "ChallengeInbox" && newChallengeActivityCount > 0 ? (
+                {tab.key === "Challenges" && currentRouteName !== "ChallengeInbox" && inboxAttentionCount > 0 ? (
                   <View style={[styles.badge, active ? styles.badgeActive : null]}>
-                    <Text style={styles.badgeText}>{newChallengeActivityCount > 9 ? "9+" : newChallengeActivityCount}</Text>
+                    <Text style={styles.badgeText}>{inboxAttentionCount > 9 ? "9+" : inboxAttentionCount}</Text>
                   </View>
                 ) : null}
               </View>

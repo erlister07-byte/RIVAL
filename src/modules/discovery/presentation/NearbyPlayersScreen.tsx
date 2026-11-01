@@ -1,6 +1,7 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useMemo, useState } from "react";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { useIsFocused } from "@react-navigation/native";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { FlatList, Platform, StyleSheet, Text, View } from "react-native";
 
 import {
   AppStackParamList,
@@ -47,6 +48,7 @@ type NearbyPlayersContentProps = {
   onNavigateToMatches?: () => void;
   onNavigateToOpenChallenges?: () => void;
   onNavigateToFriendSearch?: () => void;
+  onNavigateToOpponentProfile?: (opponentProfileId: string) => void;
   onOpenChallengeAccepted?: () => void;
 };
 
@@ -59,6 +61,7 @@ export function FullNearbyPlayersScreen({ navigation, route }: Props) {
       sandboxMode={null}
       onCreateChallenge={(params) => navigation.navigate("CreateChallenge", params)}
       onNavigateToFriendSearch={() => navigation.navigate("FriendSearch")}
+      onNavigateToOpponentProfile={(opponentProfileId) => navigation.navigate("OpponentProfile", { opponentProfileId })}
       onOpenChallengeAccepted={() =>
         navigation.reset({
           index: 0,
@@ -103,6 +106,7 @@ function NearbyPlayersContent({
   onNavigateToMatches,
   onNavigateToOpenChallenges,
   onNavigateToFriendSearch,
+  onNavigateToOpponentProfile,
   onOpenChallengeAccepted
 }: NearbyPlayersContentProps) {
   const { currentUser, isHydratingProfile } = useAppState();
@@ -121,26 +125,33 @@ function NearbyPlayersContent({
   const [cancelingChallengeId, setCancelingChallengeId] = useState<string | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<NearbyPlayer | null>(null);
 
-  if (!currentUser?.id && isHydratingProfile) {
-    return (
-      <Screen scrollable={false}>
-        <View style={styles.container}>
-          <Card>
-            <Text style={styles.errorTitle}>Loading your player profile</Text>
-            <Text style={styles.stateText}>Nearby matches will appear once your profile finishes hydrating.</Text>
-          </Card>
-          <PlayerListSkeleton />
-        </View>
-      </Screen>
-    );
-  }
+  const isFocused = useIsFocused();
+  const viewScope = useMemo(() => ({}), [
+    currentUser?.id, currentUser?.challengeRadiusKm, currentUser?.vancouverArea,
+    isFocused, isPlayNowMode, sandboxMode, sport, timingContext
+  ]);
+  // Each refresh/lifetime owns its reads and actions. Layout cleanup invalidates
+  // old completions before a new account, filter or focused screen can act.
+  const requestScope = useMemo(() => ({ active: false, joining: false }), [viewScope, reloadKey]);
+  useLayoutEffect(() => { setActionError(""); }, [viewScope]);
+  useLayoutEffect(() => {
+    requestScope.active = isFocused && Boolean(currentUser?.id);
+    setJoiningChallengeId(null);
+    setLoading(Boolean(currentUser?.id));
+    setPlayers([]);
+    setOpenChallenges([]);
+    setOwnOpenChallenges([]);
+    return () => { requestScope.active = false; };
+  }, [requestScope]);
 
   useEffect(() => {
+    if (!requestScope.active) return;
     let isActive = true;
+    const isCurrent = () => isActive && requestScope.active;
 
     async function loadPlayers() {
       if (!currentUser?.id) {
-        if (isActive) {
+        if (isCurrent()) {
           setPlayers([]);
           setLoading(false);
         }
@@ -149,7 +160,6 @@ function NearbyPlayersContent({
 
       setLoading(true);
       setError("");
-      setActionError("");
 
       try {
         if (isPlayNowMode) {
@@ -158,7 +168,7 @@ function NearbyPlayersContent({
             : null;
           const nextChallenges = loopTwoChallenges?.challenges ?? await getOpenChallenges(sport);
 
-          if (isActive) {
+          if (isCurrent()) {
             setOpenChallenges(nextChallenges);
             setOwnOpenChallenges(loopTwoChallenges?.ownChallenges ?? []);
             setPlayers([]);
@@ -172,14 +182,14 @@ function NearbyPlayersContent({
                 availability: timingContext
               });
 
-          if (isActive) {
+          if (isCurrent()) {
             setPlayers(nextPlayers);
             setOpenChallenges([]);
             setOwnOpenChallenges([]);
           }
         }
       } catch (loadError) {
-        if (isActive) {
+        if (isCurrent()) {
           setPlayers([]);
           setOpenChallenges([]);
           setOwnOpenChallenges([]);
@@ -192,7 +202,7 @@ function NearbyPlayersContent({
           );
         }
       } finally {
-        if (isActive) {
+        if (isCurrent()) {
           setLoading(false);
         }
       }
@@ -203,7 +213,7 @@ function NearbyPlayersContent({
     return () => {
       isActive = false;
     };
-  }, [currentUser?.challengeRadiusKm, currentUser?.id, currentUser?.vancouverArea, isPlayNowMode, reloadKey, sport, timingContext]);
+  }, [requestScope]);
 
   const headerTitle = isPlayNowMode
     ? "Find a live game"
@@ -225,37 +235,45 @@ function NearbyPlayersContent({
     if (timingContext === "now") {
       return sandboxMode
         ? "No one nearby is marked ready now. Try today or this week."
-        : "No one nearby is marked ready now. Try today or this week, or challenge a friend directly.";
+        : "No one nearby is marked ready now. Try today or this week, or find a player by username.";
     }
 
     if (timingContext === "today") {
       return sandboxMode
         ? "No one nearby is free today. Try widening the timing to this week."
-        : "No one nearby is free today. Try widening the timing to this week or challenge a friend.";
+        : "No one nearby is free today. Try widening the timing to this week or find a player by username.";
     }
 
     return sandboxMode
       ? "No nearby players matched this timing yet. Try again later."
-      : "No nearby players matched this timing yet. Try again later or challenge a friend by username.";
+      : "No nearby players matched this timing yet. Try again later or find a player by username.";
   }, [isPlayNowMode, sandboxMode, timingContext]);
 
   async function handleJoinOpenChallenge(challenge: OpenChallenge) {
-    if (!currentUser?.id) {
-      setActionError("You need to be signed in to join a challenge.");
-      return;
-    }
-
+    if (!requestScope.active || requestScope.joining || loading || error) return;
+    requestScope.joining = true;
     setJoiningChallengeId(challenge.id);
     setActionError("");
 
     try {
       await acceptLoopTwoOpenChallenge(challenge.id);
+      if (!requestScope.active) return;
       setOpenChallenges((current) => current.filter((item) => item.id !== challenge.id));
       onOpenChallengeAccepted?.();
     } catch (joinError) {
+      if (!requestScope.active) return;
       setActionError(getUserSafeErrorMessage(joinError, "Unable to join this challenge right now."));
+      // A rejected or interrupted Join may leave the displayed list stale.
+      // Reconcile once through the existing loader, never retry the mutation.
+      // Keep rows non-actionable even if that authoritative read fails.
+      requestScope.active = false;
+      setLoading(true);
+      setReloadKey((value) => value + 1);
     } finally {
-      setJoiningChallengeId(null);
+      if (requestScope.active) {
+        requestScope.joining = false;
+        setJoiningChallengeId(null);
+      }
     }
   }
 
@@ -291,6 +309,7 @@ function NearbyPlayersContent({
         matchesPlayed={item.matchesPlayed}
         reason={`${item.vancouverArea} · ${getAvailabilityLabel(item.availabilityStatus)}`}
         actionLabel={sandboxMode ? "Select" : "Challenge"}
+        onViewProfile={sandboxMode ? undefined : () => onNavigateToOpponentProfile?.(item.id)}
         onPress={() => {
           if (sandboxMode) {
             setSelectedPlayer(item);
@@ -357,6 +376,20 @@ function NearbyPlayersContent({
     );
   }
 
+  if (!currentUser?.id && isHydratingProfile) {
+    return (
+      <Screen scrollable={false}>
+        <View style={styles.container}>
+          <Card>
+            <Text style={styles.errorTitle}>Loading your player profile</Text>
+            <Text style={styles.stateText}>Nearby matches will appear once your profile finishes hydrating.</Text>
+          </Card>
+          <PlayerListSkeleton />
+        </View>
+      </Screen>
+    );
+  }
+
   if (sandboxMode && selectedPlayer) {
     const selectedSport = selectedPlayer.sports.find((entry) => entry.sport === sport) ?? selectedPlayer.sports[0];
 
@@ -391,69 +424,111 @@ function NearbyPlayersContent({
     );
   }
 
+  const filters = (
+    <Card>
+      <Text style={styles.kicker}>{isPlayNowMode ? "Play Now" : "Local Matchmaking"}</Text>
+      <Text style={styles.title}>{headerTitle}</Text>
+      <Text style={styles.subtitle}>{headerSubtitle}</Text>
+
+      <View style={styles.filterSection}>
+        <Text style={styles.filterLabel}>Sport</Text>
+        <View style={styles.filterWrap}>
+          {enabledSports.map((option) => (
+            <Chip
+              key={option.slug}
+              label={option.displayName}
+              selected={sport === option.slug}
+              onPress={() => setSport(option.slug)}
+            />
+          ))}
+        </View>
+      </View>
+
+      {!isPlayNowMode ? (
+        <View style={styles.filterSection}>
+          <Text style={styles.filterLabel}>When do you want to play?</Text>
+          <View style={styles.filterWrap}>
+            {timingOptions.map((option) => (
+              <Chip
+                key={option}
+                label={getAvailabilityLabel(option)}
+                selected={timingContext === option}
+                onPress={() => setTimingContext(option)}
+              />
+            ))}
+          </View>
+        </View>
+      ) : null}
+      {sandboxMode === "loop-02" ? (
+        <View style={styles.loopTwoActions}>
+          <Button label="Pending Challenges" tone="secondary" onPress={() => onNavigateToPendingChallenges?.()} />
+          <Button label="Matches" tone="secondary" onPress={() => onNavigateToMatches?.()} />
+          <Button label="Open Challenges" tone="secondary" onPress={() => onNavigateToOpenChallenges?.()} />
+        </View>
+      ) : null}
+      {sandboxMode === "loop-02" && isPlayNowMode ? (
+        <Button label="Post Open Challenge" onPress={() => onCreateChallenge?.({ mode: "open", sport })} />
+      ) : null}
+      {actionError ? <Text style={styles.inlineError}>{actionError}</Text> : null}
+    </Card>
+  );
+
+  const errorState = (
+    <Card>
+      <Text style={styles.errorTitle}>{isPlayNowMode ? "Could not load Quick Match" : "Could not load players"}</Text>
+      <Text style={styles.stateText}>
+        {getDiagnosticErrorMessage(
+          { message: error },
+          isPlayNowMode ? "Unable to load Quick Match right now." : "Unable to load nearby players right now."
+        )}
+      </Text>
+      <Button label="Try Again" tone="secondary" onPress={() => setReloadKey((value) => value + 1)} />
+    </Card>
+  );
+
+  const emptyPlayersState = (
+    <Card>
+      <EmptyState title="No nearby players found" description={emptyDescription} />
+      {sandboxMode ? null : (
+        <Button
+          label="Find Player"
+          tone="secondary"
+          onPress={() => {
+            onNavigateToFriendSearch?.();
+          }}
+        />
+      )}
+    </Card>
+  );
+
+  // Let native gestures over the filters scroll the same viewport as the rows.
+  // A fixed filter card above the list can consume nearly all its usable height.
+  if (Platform.OS !== "web" && !isPlayNowMode) {
+    return (
+      <Screen scrollable={false}>
+        <FlatList
+          style={styles.nativeList}
+          data={loading || error ? [] : players}
+          keyExtractor={(item) => item.id}
+          renderItem={renderPlayer}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          ListHeaderComponent={filters}
+          ListEmptyComponent={loading ? <PlayerListSkeleton /> : error ? errorState : emptyPlayersState}
+        />
+      </Screen>
+    );
+  }
+
   return (
     <Screen scrollable={false}>
       <View style={styles.container}>
-        <Card>
-          <Text style={styles.kicker}>{isPlayNowMode ? "Play Now" : "Local Matchmaking"}</Text>
-          <Text style={styles.title}>{headerTitle}</Text>
-          <Text style={styles.subtitle}>{headerSubtitle}</Text>
-
-          <View style={styles.filterSection}>
-            <Text style={styles.filterLabel}>Sport</Text>
-            <View style={styles.filterWrap}>
-              {enabledSports.map((option) => (
-                <Chip
-                  key={option.slug}
-                  label={option.displayName}
-                  selected={sport === option.slug}
-                  onPress={() => setSport(option.slug)}
-                />
-              ))}
-            </View>
-          </View>
-
-          {!isPlayNowMode ? (
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>When do you want to play?</Text>
-              <View style={styles.filterWrap}>
-                {timingOptions.map((option) => (
-                  <Chip
-                    key={option}
-                    label={getAvailabilityLabel(option)}
-                    selected={timingContext === option}
-                    onPress={() => setTimingContext(option)}
-                  />
-                ))}
-              </View>
-            </View>
-          ) : null}
-          {sandboxMode === "loop-02" ? (
-            <View style={styles.loopTwoActions}>
-              <Button label="Pending Challenges" tone="secondary" onPress={() => onNavigateToPendingChallenges?.()} />
-              <Button label="Matches" tone="secondary" onPress={() => onNavigateToMatches?.()} />
-              <Button label="Open Challenges" tone="secondary" onPress={() => onNavigateToOpenChallenges?.()} />
-            </View>
-          ) : null}
-          {sandboxMode === "loop-02" && isPlayNowMode ? (
-            <Button label="Post Open Challenge" onPress={() => onCreateChallenge?.({ mode: "open", sport })} />
-          ) : null}
-          {actionError ? <Text style={styles.inlineError}>{actionError}</Text> : null}
-        </Card>
+        {filters}
 
         {loading ? (
           <PlayerListSkeleton />
         ) : error ? (
-          <Card>
-            <Text style={styles.errorTitle}>{isPlayNowMode ? "Could not load Quick Match" : "Could not load players"}</Text>
-            <Text style={styles.stateText}>
-              {getDiagnosticErrorMessage(
-                { message: error },
-                isPlayNowMode ? "Unable to load Quick Match right now." : "Unable to load nearby players right now."
-              )}
-            </Text>
-            <Button label="Try Again" tone="secondary" onPress={() => setReloadKey((value) => value + 1)} />
-          </Card>
+          errorState
         ) : isPlayNowMode ? (
           <FlatList
             data={openChallenges}
@@ -470,18 +545,7 @@ function NearbyPlayersContent({
             }
           />
         ) : players.length === 0 ? (
-          <Card>
-            <EmptyState title="No nearby players found" description={emptyDescription} />
-            {sandboxMode ? null : (
-              <Button
-                label="Challenge a Friend"
-                tone="secondary"
-                onPress={() => {
-                  onNavigateToFriendSearch?.();
-                }}
-              />
-            )}
-          </Card>
+          emptyPlayersState
         ) : (
           <FlatList
             data={players}
@@ -534,6 +598,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.xs
+  },
+  nativeList: {
+    flex: 1
   },
   listContent: {
     gap: spacing.md,

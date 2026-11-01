@@ -192,8 +192,8 @@ Deno.serve(async (request) => {
       return jsonResponse(422, { error: "Profile is not ready for discovery" });
     }
 
-    const { data: candidates, error: candidatesError } = await supabaseAdmin
-      .from("profiles")
+    const candidateQuery = supabaseAdmin
+      .rpc("social_discover_profiles", { trusted_actor_auth_user_id: authUserId, active_sport_id: supportedSports[sport as keyof typeof supportedSports] }, { get: true })
       .select(`
         id,
         username,
@@ -205,9 +205,8 @@ Deno.serve(async (request) => {
       `)
       .eq("onboarding_completed", true)
       .neq("id", callerProfile.id)
-      .eq("profile_sports.sport_id", supportedSports[sport as keyof typeof supportedSports])
-      .eq("profile_sports.is_active", true)
       .in("availability_status", getAvailabilityValues(availability as typeof availabilityValues[number]));
+    const { data: candidates, error: candidatesError } = await candidateQuery;
 
     if (candidatesError) {
       console.error("[get-nearby-players] candidate lookup failed", { error: candidatesError });

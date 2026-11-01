@@ -555,7 +555,7 @@ export function CreateChallengeScreen({ navigation, route }: Props) {
                       <CircleUserRound size={22} color={colors.primary} strokeWidth={2.2} />
                     </View>
                     <View style={styles.opponentChoiceText}>
-                      <Text style={styles.opponentChoiceTitle}>Challenge a Friend</Text>
+                      <Text style={styles.opponentChoiceTitle}>Find Player</Text>
                       <Text style={styles.opponentChoiceSubtitle}>Search by username</Text>
                     </View>
                   </Pressable>

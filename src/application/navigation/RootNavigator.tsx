@@ -22,6 +22,9 @@ import { LoopTwoMatchInboxScreen } from "@/modules/matches/presentation/MatchInb
 import { LoopTwoSubmitMatchResultScreen } from "@/modules/matches/presentation/SubmitMatchResultScreen";
 import { OnboardingScreen } from "@/modules/onboarding/presentation/OnboardingScreen";
 import { ProfileScreen } from "@/modules/profile/presentation/ProfileScreen";
+import { OpponentProfileScreen } from "@/modules/profile/presentation/OpponentProfileScreen";
+import { FriendsScreen } from "@/modules/profile/presentation/FriendsScreen";
+import { BlockedPlayersScreen } from "@/modules/profile/presentation/BlockedPlayersScreen";
 import { ConfirmResultScreen } from "@/modules/results/presentation/ConfirmResultScreen";
 import { MatchResultSubmissionScreen } from "@/modules/results/presentation/MatchResultSubmissionScreen";
 import { ResultsInboxScreen } from "@/modules/results/presentation/ResultsInboxScreen";
@@ -160,7 +163,10 @@ function AppNavigator() {
           NearbyPlayers: "Nearby Players",
           ChallengeInbox: "Challenges",
           Profile: "Profile",
-          FriendSearch: "Challenge Friend",
+          FriendSearch: "Find Player",
+          Friends: "Friends",
+          BlockedPlayers: "Blocked Players",
+          OpponentProfile: "Opponent Profile",
           Messages: "Messages",
           Chat: "Chat",
           Leaderboard: "Leaderboard",
@@ -201,8 +207,11 @@ function AppNavigator() {
       <AppStack.Screen
         name="FriendSearch"
         component={FriendSearchScreen}
-        options={{ title: "Challenge Friend" }}
+        options={{ title: "Find Player" }}
       />
+      <AppStack.Screen name="OpponentProfile" component={OpponentProfileScreen} />
+      <AppStack.Screen name="Friends" component={FriendsScreen} />
+      <AppStack.Screen name="BlockedPlayers" component={BlockedPlayersScreen} />
       <AppStack.Screen
         name="NearbyPlayers"
         component={FullNearbyPlayersScreen}

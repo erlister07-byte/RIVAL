@@ -1,3 +1,4 @@
+import { NavigatorScreenParams } from "@react-navigation/native";
 import { AvailabilityStatus, SportSlug } from "@/core/types/models";
 
 export type AuthStackParamList = {
@@ -38,9 +39,12 @@ export type MainTabParamList = {
 };
 
 export type AppStackParamList = {
-  Tabs: undefined;
+  Tabs: NavigatorScreenParams<MainTabParamList> | undefined;
   Leaderboard: undefined;
   FriendSearch: undefined;
+  Friends: undefined;
+  BlockedPlayers: undefined;
+  OpponentProfile: { opponentProfileId: string; confirmedMatchSport?: SportSlug; sourceSport?: SportSlug };
   NearbyPlayers: NearbyPlayersRouteParams;
   Messages: undefined;
   Chat: {

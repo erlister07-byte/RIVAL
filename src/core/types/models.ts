@@ -288,6 +288,7 @@ export type RecentMatch = {
   sport: SportSlug;
   opponentProfileId: string;
   opponentName: string;
+  opponentUsername?: string;
   scoreSummary: string;
   result: PlayerMatchResult;
   date: string;

@@ -50,7 +50,12 @@ Deno.serve(async (request) => {
 
   try {
     const authUserId = await getAuthenticatedUserId(request);
-    const query = new URL(request.url).searchParams.get("query")?.trim().replace(/[%_]/g, "") ?? "";
+    const query = new URL(request.url).searchParams.get("query")?.trim() ?? "";
+
+    // PostgreSQL text cannot represent NUL; reject it before query transport.
+    if (query.includes("\0")) {
+      return jsonResponse(400, { error: "Invalid search query" });
+    }
 
     if (query.length < 2) {
       return jsonResponse(200, { profiles: [] });
@@ -64,15 +69,15 @@ Deno.serve(async (request) => {
       .maybeSingle();
 
     if (currentProfileError) {
-      return jsonResponse(500, { error: currentProfileError.message });
+      return jsonResponse(500, { error: "Unable to search profiles" });
     }
 
     if (!currentProfile) {
       return jsonResponse(404, { error: "Profile not found for authenticated user" });
     }
 
-    const { data: profiles, error: searchError } = await supabaseAdmin
-      .from("profiles")
+    const search = supabaseAdmin
+      .rpc("social_discover_profiles", { trusted_actor_auth_user_id: authUserId }, { get: true })
       .select(`
         id,
         username,
@@ -84,9 +89,12 @@ Deno.serve(async (request) => {
       `)
       .eq("onboarding_completed", true)
       .neq("id", currentProfile.id)
-      .ilike("username", `%${query}%`)
-      .order("username", { ascending: true })
-      .limit(20);
+      // imatch preserves case-insensitive substring matching. PostgreSQL
+      // ***= quotes the entire pattern, including backslashes and regex syntax.
+      // Unlike PostgREST ilike, it also keeps * literal instead of aliasing %.
+      .filter("username", "imatch", `***=${query}`)
+      .order("username", { ascending: true });
+    const { data: profiles, error: searchError } = await search.limit(20);
 
     if (searchError) {
       console.error("[search-profiles] profile search failed", {
@@ -95,14 +103,14 @@ Deno.serve(async (request) => {
         query,
         error: searchError
       });
-      return jsonResponse(500, { error: searchError.message });
+      return jsonResponse(500, { error: "Unable to search profiles" });
     }
 
     return jsonResponse(200, { profiles: profiles ?? [] });
   } catch (error) {
     console.error("[search-profiles] unexpected failure", error);
     return jsonResponse(500, {
-      error: error instanceof Error ? error.message : "Unknown profile search error"
+      error: "Unable to search profiles"
     });
   }
 });

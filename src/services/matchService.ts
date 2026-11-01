@@ -733,6 +733,7 @@ export async function getRecentMatches(profileId: string): Promise<RecentMatch[]
       sport: match.sport as RecentMatch["sport"],
       opponentProfileId: match.counterpart.profileId,
       opponentName: getCanonicalIdentityName(match.counterpart),
+      opponentUsername: match.counterpart.username?.trim() || undefined,
       scoreSummary: match.scoreSummary ?? "Confirmed result",
       result: match.resultOutcome === "draw" ? "draw" : match.winnerProfileId === profileId ? "win" : "loss",
       date: match.confirmedAt ?? match.updatedAt ?? match.scheduledAt ?? "",

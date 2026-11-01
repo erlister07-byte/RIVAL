@@ -22,6 +22,7 @@ type Props = {
   matchesPlayed?: number;
   reason?: string;
   actionLabel?: string;
+  onViewProfile?: () => void;
   onPress: () => void;
 };
 
@@ -40,6 +41,7 @@ export function PlayerListItem({
   matchesPlayed,
   reason,
   actionLabel = "Challenge",
+  onViewProfile,
   onPress
 }: Props) {
   const locationLabel = distanceLabel ?? areaLabel;
@@ -80,6 +82,7 @@ export function PlayerListItem({
       </View>
       <View style={styles.actionWrap}>
         <Button label={actionLabel} onPress={onPress} />
+        {onViewProfile ? <Button label="View Profile" tone="secondary" onPress={onViewProfile} /> : null}
       </View>
     </Card>
   );
@@ -147,6 +150,7 @@ const styles = StyleSheet.create({
   },
   actionWrap: {
     minWidth: 124,
-    paddingTop: spacing.xxs
+    paddingTop: spacing.xxs,
+    gap: spacing.xs
   }
 });

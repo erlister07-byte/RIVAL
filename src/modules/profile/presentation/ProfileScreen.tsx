@@ -8,9 +8,10 @@ import * as ImagePicker from "expo-image-picker";
 import { Check, Copy } from "lucide-react-native";
 
 import { AppStackParamList, MainTabParamList } from "@/application/navigation/types";
+import { buildRematchChallengeParams } from "@/application/navigation/challengeNavigation";
 import { colors, spacing, typography } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
-import { SPORT_CONFIGS, getSportIdBySlug, isSportEnabled } from "@/config/sports";
+import { SPORT_CONFIGS, isSportEnabled } from "@/config/sports";
 import {
   getSkillLevelLabel,
   Profile,
@@ -502,6 +503,10 @@ export function ProfileScreen({ navigation }: Props) {
   return (
     <Screen>
       <Card>
+        <Button label="Friends" tone="secondary" onPress={() => appNavigation?.navigate("Friends")} />
+        <Button label="Blocked Players" tone="secondary" onPress={() => appNavigation?.navigate("BlockedPlayers")} />
+      </Card>
+      <Card>
         <Text style={styles.kicker}>Account</Text>
         <View style={styles.accountHeader}>
           <Avatar
@@ -826,15 +831,23 @@ export function ProfileScreen({ navigation }: Props) {
                 ) : null}
                 <View style={styles.rematchAction}>
                   <Button
+                    label="View Profile"
+                    tone="secondary"
+                    onPress={() => appNavigation?.navigate("OpponentProfile", {
+                      opponentProfileId: match.opponentProfileId,
+                      confirmedMatchSport: match.sport
+                    })}
+                  />
+                  <Button
                     label="Challenge Again"
                     tone="secondary"
                     onPress={() =>
-                      appNavigation?.navigate("CreateChallenge", {
-                        opponentId: match.opponentProfileId,
+                      appNavigation?.navigate("CreateChallenge", buildRematchChallengeParams({
+                        opponentProfileId: match.opponentProfileId,
                         opponentName: match.opponentName,
-                        sportId: getSportIdBySlug(match.sport),
-                        isRematch: true
-                      })
+                        opponentUsername: match.opponentUsername,
+                        sport: match.sport
+                      }))
                     }
                   />
                 </View>
@@ -1209,7 +1222,8 @@ const styles = StyleSheet.create({
   },
   rematchAction: {
     marginTop: spacing.sm,
-    alignSelf: "flex-start"
+    alignSelf: "flex-start",
+    gap: spacing.xs
   },
   stateContainer: {
     paddingVertical: spacing.lg,

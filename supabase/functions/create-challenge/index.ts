@@ -1,4 +1,5 @@
 import { getAuthenticatedUserId } from "../_shared/auth.ts";
+import { isPairBlocked } from "../_shared/block.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -39,7 +40,9 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const authUserId = await getAuthenticatedUserId(request);
+    let authUserId: string;
+    try { authUserId = await getAuthenticatedUserId(request); }
+    catch { return jsonResponse(401, { error: "Authentication required" }); }
     const requestBody = (await request.json().catch(() => ({}))) as {
       sportId?: number;
       opponentProfileId?: string;
@@ -53,6 +56,21 @@ Deno.serve(async (request) => {
       stakeNote?: string | null;
       isOpen?: boolean;
     };
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const optionalText = (value: unknown) => value == null || typeof value === "string";
+    const coordinate = (value: unknown, max: number) => value == null ||
+      (typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= max);
+    if (!requestBody || typeof requestBody !== "object" || Array.isArray(requestBody) ||
+      !Number.isInteger(requestBody.sportId) || (requestBody.sportId ?? 0) <= 0 ||
+      typeof requestBody.scheduledAt !== "string" || Number.isNaN(Date.parse(requestBody.scheduledAt)) ||
+      typeof requestBody.locationName !== "string" || !requestBody.locationName.trim() ||
+      !["casual", "practice", "ranked"].includes(requestBody.challengeType ?? "") ||
+      (requestBody.isOpen !== undefined && typeof requestBody.isOpen !== "boolean") ||
+      (requestBody.opponentProfileId != null && (typeof requestBody.opponentProfileId !== "string" || !uuid.test(requestBody.opponentProfileId))) ||
+      !optionalText(requestBody.stakeType) || !optionalText(requestBody.stakeLabel) || !optionalText(requestBody.stakeNote) ||
+      !coordinate(requestBody.locationLatitude, 90) || !coordinate(requestBody.locationLongitude, 180)) {
+      return jsonResponse(400, { error: "Missing or invalid challenge fields" });
+    }
     const supabaseAdmin = createSupabaseAdmin();
     const { data: challenger, error: challengerError } = await supabaseAdmin
       .from("profiles")
@@ -62,7 +80,7 @@ Deno.serve(async (request) => {
       .maybeSingle();
 
     if (challengerError) {
-      return jsonResponse(500, { error: challengerError.message });
+      return jsonResponse(500, { error: "Unable to create challenge" });
     }
 
     if (!challenger) {
@@ -99,10 +117,13 @@ Deno.serve(async (request) => {
         .maybeSingle();
 
       if (opponentError) {
-        return jsonResponse(500, { error: opponentError.message });
+        return jsonResponse(500, { error: "Unable to create challenge" });
       }
 
       if (!opponent) {
+        return jsonResponse(404, { error: "Opponent profile not found" });
+      }
+      if (await isPairBlocked(supabaseAdmin, challenger.id, opponent.id)) {
         return jsonResponse(404, { error: "Opponent profile not found" });
       }
     }
@@ -128,20 +149,19 @@ Deno.serve(async (request) => {
       .single();
 
     if (createError) {
-      console.error("[create-challenge] insert failed", {
-        authUserId,
-        challengerProfileId: challenger.id,
-        opponentProfileId: requestBody.opponentProfileId ?? null,
-        error: createError
-      });
-      return jsonResponse(500, { error: createError.message });
+      if (createError.code === "P0001") return jsonResponse(404, { error: "Opponent profile not found" });
+      if (["22P02", "22003", "22007", "23503", "23514", "23502"].includes(createError.code)) {
+        return jsonResponse(400, { error: "Missing or invalid challenge fields" });
+      }
+      console.error("[create-challenge] insert failed", { code: createError.code });
+      return jsonResponse(500, { error: "Unable to create challenge" });
     }
 
     return jsonResponse(200, { challenge });
   } catch (error) {
-    console.error("[create-challenge] unexpected failure", error);
+    console.error("[create-challenge] unexpected failure");
     return jsonResponse(500, {
-      error: error instanceof Error ? error.message : "Unknown challenge creation error"
+      error: "Unable to create challenge"
     });
   }
 });

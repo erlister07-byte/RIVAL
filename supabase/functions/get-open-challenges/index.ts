@@ -27,8 +27,9 @@ Deno.serve(async (request) => {
     if (!caller) return jsonResponse(404, { error: "Profile not found for authenticated user" });
     if (!caller.onboarding_completed) return jsonResponse(422, { error: "Complete onboarding before viewing open challenges" });
     const selection = "id, challenger_profile_id, scheduled_at, location_name, challenge_type, stake_type, stake_label, stake_note, created_at, sports!inner(id, slug, name), challenger:profiles!challenges_challenger_profile_id_fkey(id, username, display_name, vancouver_area)";
-    const base = () => supabaseAdmin.from("challenges").select(selection).eq("sport_id", 3).eq("is_open", true).eq("status", "pending").is("opponent_profile_id", null).gt("scheduled_at", new Date().toISOString()).order("created_at", { ascending: false });
-    const [{ data: challenges, error: challengesError }, { data: ownChallenges, error: ownChallengesError }] = await Promise.all([base().neq("challenger_profile_id", caller.id), base().eq("challenger_profile_id", caller.id)]);
+    const base = () => supabaseAdmin.rpc("social_discover_open_challenges", { trusted_actor_auth_user_id: authUserId }, { get: true }).select(selection).eq("sport_id", 3).eq("is_open", true).eq("status", "pending").is("opponent_profile_id", null).order("created_at", { ascending: false });
+    const others = base().neq("challenger_profile_id", caller.id);
+    const [{ data: challenges, error: challengesError }, { data: ownChallenges, error: ownChallengesError }] = await Promise.all([others, base().eq("challenger_profile_id", caller.id)]);
     if (challengesError || ownChallengesError) return jsonResponse(500, { error: "Unable to load open challenges" });
     return jsonResponse(200, { challenges: (challenges ?? []).map((challenge) => mapOpenChallenge(challenge as Record<string, unknown>)), ownChallenges: (ownChallenges ?? []).map((challenge) => mapOpenChallenge(challenge as Record<string, unknown>)) });
   } catch (error) { console.error("[get-open-challenges] unexpected failure", { error }); return jsonResponse(500, { error: "Unable to load open challenges" }); }
