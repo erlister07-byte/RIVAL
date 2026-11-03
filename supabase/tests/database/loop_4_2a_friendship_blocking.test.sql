@@ -418,7 +418,15 @@ select extensions.ok(
 -- Simultaneous reciprocal requests and request-vs-block use independent DB
 -- sessions and committed, test-only identities separate from the transaction
 -- fixtures above.
-select extensions.dblink_connect('loop42a_setup', 'host=localhost port=5432 dbname=postgres user=postgres');
+select extensions.dblink_connect(
+  'loop42a_setup',
+  format(
+    'hostaddr=%s port=%s dbname=%I user=postgres password=postgres',
+    inet_server_addr(),
+    current_setting('port'),
+    current_database()
+  )
+);
 select extensions.dblink_exec('loop42a_setup', $setup$
   insert into auth.users (
     instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -434,8 +442,14 @@ select extensions.dblink_exec('loop42a_setup', $setup$
     ('20000000-0000-4000-8000-000000000006', '10000000-0000-4000-8000-000000000006', 'loop42a-f@rival.local', 'loop42a_f', 'Loop 4.2A F', 'New Westminster', true);
 $setup$);
 
-select extensions.dblink_connect('loop42a_request_a', 'host=localhost port=5432 dbname=postgres user=postgres');
-select extensions.dblink_connect('loop42a_request_b', 'host=localhost port=5432 dbname=postgres user=postgres');
+select extensions.dblink_connect(
+  'loop42a_request_a',
+  format('hostaddr=%s port=%s dbname=%I user=postgres password=postgres', inet_server_addr(), current_setting('port'), current_database())
+);
+select extensions.dblink_connect(
+  'loop42a_request_b',
+  format('hostaddr=%s port=%s dbname=%I user=postgres password=postgres', inet_server_addr(), current_setting('port'), current_database())
+);
 select extensions.dblink_send_query(
   'loop42a_request_a',
   $$select public.social_send_friend_request('10000000-0000-4000-8000-000000000005', '20000000-0000-4000-8000-000000000006')$$
@@ -486,8 +500,14 @@ select extensions.dblink_exec('loop42a_setup', $setup$
   $function$;
 $setup$);
 
-select extensions.dblink_connect('loop42a_race_request', 'host=localhost port=5432 dbname=postgres user=postgres');
-select extensions.dblink_connect('loop42a_race_block', 'host=localhost port=5432 dbname=postgres user=postgres');
+select extensions.dblink_connect(
+  'loop42a_race_request',
+  format('hostaddr=%s port=%s dbname=%I user=postgres password=postgres', inet_server_addr(), current_setting('port'), current_database())
+);
+select extensions.dblink_connect(
+  'loop42a_race_block',
+  format('hostaddr=%s port=%s dbname=%I user=postgres password=postgres', inet_server_addr(), current_setting('port'), current_database())
+);
 select extensions.dblink_send_query(
   'loop42a_race_request',
   $$select public.loop_4_2a_slow_friend_request()$$
@@ -541,8 +561,14 @@ select extensions.dblink_exec('loop42a_setup', $setup$
   end;
   $function$;
 $setup$);
-select extensions.dblink_connect('loop42a_challenge', 'host=localhost port=5432 dbname=postgres user=postgres');
-select extensions.dblink_connect('loop42a_block', 'host=localhost port=5432 dbname=postgres user=postgres');
+select extensions.dblink_connect(
+  'loop42a_challenge',
+  format('hostaddr=%s port=%s dbname=%I user=postgres password=postgres', inet_server_addr(), current_setting('port'), current_database())
+);
+select extensions.dblink_connect(
+  'loop42a_block',
+  format('hostaddr=%s port=%s dbname=%I user=postgres password=postgres', inet_server_addr(), current_setting('port'), current_database())
+);
 select extensions.dblink_send_query('loop42a_challenge', $$select public.loop_4_2a_race_challenge(true)$$);
 select pg_catalog.pg_sleep(0.05);
 select extensions.dblink_send_query('loop42a_block', $$select public.social_block_profile('10000000-0000-4000-8000-000000000006', '20000000-0000-4000-8000-000000000005')$$);

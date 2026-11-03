@@ -11,6 +11,8 @@ const destination=new URL(cfg.API_URL);
 assert(['127.0.0.1','localhost','[::1]'].includes(destination.hostname),'Local loopback backend required');
 assert.equal(process.env.SECURITY_QA_EXPECTED_MAX_ROWS,'20','Explicit disposable-local 20-row test configuration required');
 const regression=process.env.SECURITY_QA_MODE==='regression';
+const dbContainer=process.env.SECURITY_QA_DB_CONTAINER;
+if(regression)assert(dbContainer,'Explicit disposable-local database container required');
 const failures=[];
 function regressionCheck(name, condition){if(regression){checks++;if(!condition)failures.push(name);}}
 const run=randomUUID().slice(0,8),password='LocalOnly-'+randomUUID()+'!',users=[],profiles=[],results=[];let checks=0;
@@ -101,8 +103,7 @@ const row=async id=>ok(await call('/rest/v1/challenges?id=eq.'+id+'&select=id,st
   // database clock AFTER the wait, not use the request's initial timestamp.
   const locked=randomUUID();
   ok(await call('/rest/v1/challenges',{method:'POST',prefer:'return=minimal',body:{id:locked,sport_id:3,challenger_profile_id:c.id,is_open:true,status:'pending',scheduled_at:new Date(Date.now()+2000).toISOString(),location_name:'Cutoff lock QA',challenge_type:'casual'}}),201);
-  assert.equal(cfg.API_URL,'http://127.0.0.1:54821','Lock test is restricted to the named isolated stack');
-  const locker=cp.spawn('docker',['exec','-i','supabase_db_rival-nearby-fix','psql','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-At'],{stdio:['pipe','pipe','pipe']});
+  const locker=cp.spawn('docker',['exec','-i',dbContainer,'psql','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-At'],{stdio:['pipe','pipe','pipe']});
   const lockedReady=new Promise((resolve,reject)=>{let output='';locker.stdout.on('data',chunk=>{output+=chunk;if(output.includes('LOCK_READY'))resolve();});locker.on('error',reject);locker.on('exit',code=>{if(!output.includes('LOCK_READY'))reject(new Error('Local row lock was not acquired: '+code));});});
   const released=new Promise((resolve,reject)=>locker.on('exit',code=>code===0?resolve():reject(new Error('Local lock worker failed'))));
   locker.stdin.end("begin; select id from public.challenges where id='"+locked+"' for update; select 'LOCK_READY'; select pg_sleep(3); commit;");

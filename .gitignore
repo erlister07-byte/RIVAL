@@ -7,6 +7,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 supabase/.temp/
+supabase/.branches/
 ios/.xcode.env.local
 ios/Pods/
 ios/build/

@@ -72,6 +72,17 @@ create table public.sports (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+-- Later migrations validate canonical sport IDs before the standalone seed
+-- file runs, so the baseline must establish this reference data itself.
+insert into public.sports (id, slug, name, is_team_sport)
+values
+  (1, 'tennis', 'Tennis', false),
+  (2, 'basketball', 'Basketball', true),
+  (3, 'pickleball', 'Pickleball', false),
+  (4, 'golf', 'Golf', false),
+  (5, 'volleyball', 'Volleyball', true),
+  (6, 'running', 'Running', false);
+
 create table public.profiles (
   id uuid primary key default gen_random_uuid(),
   auth_user_id uuid not null unique references auth.users(id) on delete cascade,

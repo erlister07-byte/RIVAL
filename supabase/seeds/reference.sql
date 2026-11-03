@@ -1,5 +1,6 @@
--- Deterministic reference data for a fresh RIVAL database.
--- Run after the canonical schema baseline and before any development-only seed.
+-- Idempotently reassert deterministic reference data for a RIVAL database.
+-- The baseline inserts these rows because later migrations validate their
+-- fixed IDs before seed files run. Keep this seed for resets and drift repair.
 -- This file intentionally contains no profiles, fixtures, activity, ratings, or XP.
 
 insert into public.sports (id, slug, name, is_team_sport)

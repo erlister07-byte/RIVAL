@@ -119,10 +119,15 @@ try {
     equal(Object.keys(row.profile_sports[0]).sort(), ["is_active", "skill_level", "sports"]);
     equal(Object.keys(row.profile_sports[0].sports), ["slug"]);
   });
-  await test("unauthenticated and invalid sessions denied (existing status)", async () => {
-    for (const token of [null, "invalid"]) {
-      const body = status(await search({ token }, literal.username), 500);
-      equal(Object.keys(body), ["error"]);
+  await test("unauthenticated and invalid sessions are denied without data leakage", async () => {
+    const missingAuth = status(await search({ token: null }, literal.username), 500);
+    equal(Object.keys(missingAuth), ["error"]);
+
+    const invalidAuth = status(await search({ token: "invalid" }, literal.username), 401);
+    assertions++; assert.equal(typeof invalidAuth.code, "string");
+    assertions++; assert.equal(typeof invalidAuth.message, "string");
+
+    for (const body of [missingAuth, invalidAuth]) {
       assertions++; assert.ok(!JSON.stringify(body).includes(literal.id));
     }
   });
