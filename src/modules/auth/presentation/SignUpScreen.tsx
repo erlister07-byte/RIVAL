@@ -7,6 +7,7 @@ import { colors } from "@/application/theme";
 import { useAppState } from "@/application/providers/AppProvider";
 import { Button } from "@/shared/components/Button";
 import { getAuthErrorMessage, validateEmail, validatePassword } from "@/shared/lib/authValidation";
+import { debugError } from "@/shared/lib/logger";
 import { Input } from "@/shared/components/Input";
 import { Screen } from "@/shared/components/Screen";
 import { SectionTitle } from "@/shared/components/SectionTitle";
@@ -42,6 +43,7 @@ export function SignUpScreen({ navigation }: Props) {
       await signUp({ email, password });
       setMessage("Account created. Check your inbox to verify your email.");
     } catch (signUpError) {
+      debugError("[SignUpScreen] account creation failed", signUpError);
       setError(getAuthErrorMessage(signUpError, "signup"));
     } finally {
       setLoading(false);
